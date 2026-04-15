@@ -1,0 +1,31 @@
+# Dépendances Node.js
+node_modules/
+
+# Dépendances PHP (Composer)
+vendor/
+
+# Archives ZIP (versions compilées)
+*.zip
+
+# Fichiers de logs
+*.log
+
+# Fichiers de données sensibles / tarifs
+*.xlsx
+*.xls
+*.csv
+
+# Système d'exploitation
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Éditeurs / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Variables d'environnement
+.env
+.env.local
