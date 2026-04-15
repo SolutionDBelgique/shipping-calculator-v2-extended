@@ -1,0 +1,74 @@
+name: Release plugin
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release:
+    name: Créer la release si la version a changé
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Lire la version dans le plugin
+        id: version
+        run: |
+          VERSION=$(grep -m1 "^\s*\*\s*Version:" shipping-calculator-v3-extended/shipping-calculator-v2-extended.php \
+            | sed 's/.*Version:\s*//' | tr -d '[:space:]')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+          echo "Version détectée : $VERSION"
+
+      - name: Vérifier si cette version a déjà une release
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "${{ steps.version.outputs.tag }}" --repo "${{ github.repository }}" &>/dev/null; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Release ${{ steps.version.outputs.tag }} existe déjà — rien à faire."
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Nouvelle version ${{ steps.version.outputs.tag }} — création de la release."
+          fi
+
+      - name: Construire le zip du plugin
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          PLUGIN_DIR="shipping-calculator-v3-extended"
+          ZIP_NAME="shipping-calculator-v3-extended.zip"
+
+          mkdir -p dist/$PLUGIN_DIR
+
+          rsync -av \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='node_modules' \
+            --exclude='dist' \
+            --exclude='*.xlsx' \
+            --exclude='package.json' \
+            --exclude='package-lock.json' \
+            --exclude='update-info.json' \
+            $PLUGIN_DIR/ dist/$PLUGIN_DIR/
+
+          cd dist
+          zip -r ../$ZIP_NAME $PLUGIN_DIR/
+          echo "Zip créé : $ZIP_NAME ($(du -sh ../$ZIP_NAME | cut -f1))"
+
+      - name: Créer la release GitHub
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --title "Version ${{ steps.version.outputs.version }}" \
+            --notes "Release automatique — version ${{ steps.version.outputs.version }}" \
+            shipping-calculator-v3-extended.zip
+          echo "Release ${{ steps.version.outputs.tag }} publiée avec succès."

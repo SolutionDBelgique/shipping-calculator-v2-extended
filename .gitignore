@@ -1,0 +1,13 @@
+# Dépendances Node
+shipping-calculator-v3-extended/node_modules/
+
+# Archives zip locales
+*.zip
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+
+# Fichiers temporaires
+*.tmp
+*.log

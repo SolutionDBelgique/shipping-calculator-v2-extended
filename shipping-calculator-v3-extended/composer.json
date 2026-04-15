@@ -1,0 +1,11 @@
+{
+    "name": "solutiond/shipping-calculator-v2-extended",
+    "description": "Interface complète de gestion des règles tarifaires multi-pays",
+    "type": "wordpress-plugin",
+    "version": "2.5.0",
+    "license": "GPL-2.0-or-later",
+    "require": {
+        "php": ">=7.4",
+        "phpoffice/phpspreadsheet": "^1.29"
+    }
+}
