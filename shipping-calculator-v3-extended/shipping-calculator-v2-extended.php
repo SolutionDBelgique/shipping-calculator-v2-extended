@@ -56,7 +56,7 @@ require_once __DIR__ . '/international-migration.php';
 // ===== Mise à jour automatique via GitHub Releases =====
 require_once __DIR__ . '/class-plugin-updater.php';
 
-add_action('init', function () {
+add_action('plugins_loaded', function () {
     if (!is_admin()) {
         return;
     }

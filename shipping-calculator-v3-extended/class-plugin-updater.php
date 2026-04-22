@@ -33,6 +33,12 @@ class SHP_Plugin_Updater {
         add_filter('pre_set_site_transient_update_plugins', [$this, 'check_for_update']);
         add_filter('plugins_api', [$this, 'plugin_info'], 20, 3);
         add_action('upgrader_process_complete', [$this, 'clear_cache'], 10, 2);
+        // Vider le cache quand WordPress force une vérification manuelle
+        add_action('delete_site_transient_update_plugins', [$this, 'clear_cache_simple']);
+    }
+
+    public function clear_cache_simple(): void {
+        delete_transient($this->transient_key);
     }
 
     public function check_for_update(object $transient): object {
