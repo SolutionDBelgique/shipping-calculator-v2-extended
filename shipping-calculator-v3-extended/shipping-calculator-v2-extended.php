@@ -694,11 +694,13 @@ class SHP_V2_Extended_Calculator {
 
         $label = $this->build_label_v2($country, $analysis);
 
+        $taxes = WC_Tax::calc_shipping_tax( $total_cost, WC_Tax::get_shipping_tax_rates() );
+
         $rates['shp_v2_ext'] = new WC_Shipping_Rate(
             'shp_v2_ext',
             $label,
             $total_cost,
-            [],
+            $taxes,
             'shp_v2_ext'
         );
 
