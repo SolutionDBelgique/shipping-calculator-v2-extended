@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: Shipping Calculator V3 Extended
- * Version: 3.1.1
+ * Version: 3.1.2
  * Description: Interface complète + Produits dégressifs au m² + Produits dégressifs par Ballot + Internationalisation + Codes promo Prix m²
  * Author: SolutionD Belgique
  * Requires at least: 5.8

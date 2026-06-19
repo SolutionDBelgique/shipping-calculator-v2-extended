@@ -232,6 +232,20 @@ class SHP_V2_Extended_Degressive_Products {
             }
         }
         
+        // Ne pas écraser si le produit a une promotion WooCommerce native active
+        // (évite <del>X€</del><ins>X€</ins> avec deux montants identiques)
+        $raw_sale = get_post_meta($product->get_id(), '_sale_price', true);
+        if ($raw_sale !== '' && $raw_sale !== false && (float) $raw_sale > 0) {
+            $date_from = get_post_meta($product->get_id(), '_sale_price_dates_from', true);
+            $date_to   = get_post_meta($product->get_id(), '_sale_price_dates_to', true);
+            $now = time();
+            $on_sale = (empty($date_from) || $now >= (int) $date_from)
+                    && (empty($date_to)   || $now <= (int) $date_to);
+            if ($on_sale) {
+                return $price; // Laisser WooCommerce gérer le sale_price natif
+            }
+        }
+
         // Si pas dans le panier ou pas de données dégressives,
         // retourner le prix de base pour l'affichage boutique
         if ($this->is_degressive($product->get_id())) {
