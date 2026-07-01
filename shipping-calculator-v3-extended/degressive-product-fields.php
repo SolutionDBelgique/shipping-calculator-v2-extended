@@ -104,9 +104,14 @@ function shp_v2_ext_add_degressive_fields() {
     });
     </script>';
     
+    echo '<div style="margin-top: 10px; padding: 10px 12px; background: #fff8e1; border-left: 4px solid #f0a500; border-radius: 3px; font-size: 13px;">';
+    echo '📌 <strong>Affichage du tableau des tarifs :</strong> le tableau ne s\'affiche pas automatiquement sur la fiche produit. ';
+    echo 'Ajoutez le shortcode <code>[tableau_degressif]</code> dans le contenu du produit à l\'endroit souhaité.';
+    echo '</div>';
+
     echo '</div>'; // fin degressive_config
     echo '</div>';
-    
+
     echo '<p style="padding-left: 150px; color: #d63638; font-weight: bold;">';
     echo '⚠️ Ne cochez QU\'UNE SEULE option par produit !';
     echo '</p>';
