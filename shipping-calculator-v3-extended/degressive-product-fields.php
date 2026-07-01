@@ -178,83 +178,85 @@ function shp_v2_ext_degressive_cart_quantity($product_quantity, $cart_item_key, 
     return $product_quantity;
 }
 
-// Afficher un tableau des prix dégressifs sur la fiche produit
-add_action('woocommerce_after_add_to_cart_form', 'shp_v2_ext_display_degressive_table');
+// Shortcode [tableau_degressif] — à placer manuellement dans la fiche produit
+add_shortcode('tableau_degressif', 'shp_v2_ext_display_degressive_table');
 
 function shp_v2_ext_display_degressive_table() {
     global $product;
-    
+
+    if (!$product || !is_a($product, 'WC_Product')) {
+        $product = wc_get_product(get_the_ID());
+    }
+
+    if (!$product) {
+        return '';
+    }
+
     $degressive = SHP_V2_Extended_Degressive_Products::get_instance();
-    
+
     if (!$degressive->is_degressive($product->get_id())) {
-        return;
+        return '';
     }
-    
+
     $config = $degressive->get_config($product->get_id());
-    
+
     if (!$config || empty($config['tiers'])) {
-        return;
+        return '';
     }
-    
-    // Inverser l'ordre des paliers (du moins cher au plus cher)
+
     $tiers = array_reverse($config['tiers']);
     $surface_per_pallet = $config['surface_per_pallet'];
-    
-    echo '<div style="margin-top: 20px; padding: 12px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 5px;">';
-    echo '<details open>';
-    echo '<summary style="cursor: pointer; font-weight: bold; color: #2271b1; font-size: 14px; margin-bottom: 10px;">📊 Tarifs Dégressifs (cliquer pour masquer)</summary>';
-    echo '<table style="width: 100%; border-collapse: collapse; font-size: 13px;">';
-    echo '<thead>';
-    echo '<tr style="background: #2271b1; color: white;">';
-    echo '<th style="padding: 6px 8px; text-align: left; font-size: 12px;">Quantité</th>';
-    echo '<th style="padding: 6px 8px; text-align: right; font-size: 12px;">Prix / m²</th>';
-    echo '<th style="padding: 6px 8px; text-align: right; font-size: 12px;">Ex. Total</th>';
-    echo '</tr>';
-    echo '</thead>';
-    echo '<tbody>';
-    
-    foreach ($tiers as $index => $tier) {
-        $min_m2 = $tier['min_pallets'] * $surface_per_pallet;
-        $max_m2 = $tier['max_pallets'] * $surface_per_pallet;
-        $bg_color = $index % 2 === 0 ? '#fff' : '#f5f5f5';
-        
-        // Calculer un exemple au milieu de la tranche
-        $example_m2 = $min_m2;
-        $example_total = $example_m2 * $tier['price_per_m2'];
-        
-        echo '<tr style="background: ' . $bg_color . ';">';
-        echo '<td style="padding: 5px 8px;">';
-        
-        if ($tier['max_pallets'] >= 999) {
-            echo sprintf('<strong style="font-size: 13px;">%d m²+</strong><br><small style="font-size: 11px; color: #666;">(%d pal.+)</small>', 
-                $min_m2, 
-                $tier['min_pallets']);
-        } else {
-            echo sprintf('<strong style="font-size: 13px;">%d-%d m²</strong><br><small style="font-size: 11px; color: #666;">(%d-%d pal.)</small>', 
-                $min_m2, 
-                $max_m2, 
-                $tier['min_pallets'], 
-                $tier['max_pallets']);
-        }
-        
-        echo '</td>';
-        echo '<td style="padding: 5px 8px; text-align: right; font-size: 15px; font-weight: bold; color: #2271b1;">';
-        $display_sym = class_exists('SHP_V2_International_Manager') && class_exists('SHP_V2_Country_Config')
-            ? SHP_V2_Country_Config::get_instance()->get_currency_symbol(SHP_V2_International_Manager::get_instance()->get_current_country())
-            : '€';
-        echo number_format($tier['price_per_m2'], 2, ',', ' ') . ' ' . esc_html($display_sym);
-        echo '</td>';
-        echo '<td style="padding: 5px 8px; text-align: right; font-size: 12px;">';
-        echo '<span style="color: #666;">Ex: ' . $example_m2 . ' m²</span><br><strong>' . number_format($example_total, 2, ',', ' ') . ' ' . esc_html($display_sym) . '</strong>';
-        echo '</td>';
-        echo '</tr>';
-    }
-    
-    echo '</tbody>';
-    echo '</table>';
-    echo '<p style="margin: 8px 0 0 0; font-size: 11px; color: #666; font-style: italic;">';
-    echo 'ℹ️ Plus vous commandez, plus le prix diminue !';
-    echo '</p>';
-    echo '</details>';
-    echo '</div>';
+
+    $display_sym = class_exists('SHP_V2_International_Manager') && class_exists('SHP_V2_Country_Config')
+        ? SHP_V2_Country_Config::get_instance()->get_currency_symbol(SHP_V2_International_Manager::get_instance()->get_current_country())
+        : '€';
+
+    ob_start();
+    ?>
+    <div style="margin-top: 20px; padding: 12px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 5px;">
+        <details open>
+            <summary style="cursor: pointer; font-weight: bold; color: #2271b1; font-size: 14px; margin-bottom: 10px;">📊 Tarifs Dégressifs (cliquer pour masquer)</summary>
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                <thead>
+                    <tr style="background: #2271b1; color: white;">
+                        <th style="padding: 6px 8px; text-align: left; font-size: 12px;">Quantité</th>
+                        <th style="padding: 6px 8px; text-align: right; font-size: 12px;">Prix / m²</th>
+                        <th style="padding: 6px 8px; text-align: right; font-size: 12px;">Ex. Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($tiers as $index => $tier) :
+                    $min_m2 = $tier['min_pallets'] * $surface_per_pallet;
+                    $max_m2 = $tier['max_pallets'] * $surface_per_pallet;
+                    $bg_color = $index % 2 === 0 ? '#fff' : '#f5f5f5';
+                    $example_total = $min_m2 * $tier['price_per_m2'];
+                ?>
+                    <tr style="background: <?php echo $bg_color; ?>;">
+                        <td style="padding: 5px 8px;">
+                            <?php if ($tier['max_pallets'] >= 999) : ?>
+                                <strong style="font-size: 13px;"><?php echo $min_m2; ?> m²+</strong><br>
+                                <small style="font-size: 11px; color: #666;">(<?php echo $tier['min_pallets']; ?> pal.+)</small>
+                            <?php else : ?>
+                                <strong style="font-size: 13px;"><?php echo $min_m2; ?>-<?php echo $max_m2; ?> m²</strong><br>
+                                <small style="font-size: 11px; color: #666;">(<?php echo $tier['min_pallets']; ?>-<?php echo $tier['max_pallets']; ?> pal.)</small>
+                            <?php endif; ?>
+                        </td>
+                        <td style="padding: 5px 8px; text-align: right; font-size: 15px; font-weight: bold; color: #2271b1;">
+                            <?php echo number_format($tier['price_per_m2'], 2, ',', ' ') . ' ' . esc_html($display_sym); ?>
+                        </td>
+                        <td style="padding: 5px 8px; text-align: right; font-size: 12px;">
+                            <span style="color: #666;">Ex: <?php echo $min_m2; ?> m²</span><br>
+                            <strong><?php echo number_format($example_total, 2, ',', ' ') . ' ' . esc_html($display_sym); ?></strong>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+            <p style="margin: 8px 0 0 0; font-size: 11px; color: #666; font-style: italic;">
+                ℹ️ Plus vous commandez, plus le prix diminue !
+            </p>
+        </details>
+    </div>
+    <?php
+    return ob_get_clean();
 }
