@@ -199,21 +199,43 @@ class SHP_V2_Extended_Degressive_Products {
         ]);
     }
     
-    public function get_quantity_options($product_id, $max_pallets = 50) {
-        $config = $this->get_config($product_id);
-        
+    public function get_quantity_options($product_id, $max_pallets = 50, $country = null) {
+        if ($country === null && class_exists('SHP_V2_International_Manager')) {
+            $country = SHP_V2_International_Manager::get_instance()->get_current_country();
+        }
+
+        $config = $this->get_config($product_id, $country);
+
         if (!$config) {
             return [];
         }
-        
+
+        $currency_symbol = class_exists('SHP_V2_Country_Config')
+            ? SHP_V2_Country_Config::get_instance()->get_currency_symbol($country)
+            : "\xE2\x82\xAC";
+
         $surface_per_pallet = $config['surface_per_pallet'];
         $options = [];
-        
+
         for ($i = 1; $i <= $max_pallets; $i++) {
             $m2 = $i * $surface_per_pallet;
-            $options[$m2] = sprintf('%d m² (%d palette%s)', $m2, $i, $i > 1 ? 's' : '');
+            $tier = $this->get_active_tier($product_id, $i, $country);
+
+            if ($tier) {
+                $total = $m2 * (float) $tier['price_per_m2'];
+                $options[$m2] = sprintf(
+                    '%d m² (%d palette%s) — %s %s',
+                    $m2,
+                    $i,
+                    $i > 1 ? 's' : '',
+                    number_format($total, 2, ',', ' '),
+                    $currency_symbol
+                );
+            } else {
+                $options[$m2] = sprintf('%d m² (%d palette%s)', $m2, $i, $i > 1 ? 's' : '');
+            }
         }
-        
+
         return $options;
     }
     
