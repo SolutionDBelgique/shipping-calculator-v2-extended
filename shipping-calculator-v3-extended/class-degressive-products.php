@@ -133,7 +133,29 @@ class SHP_V2_Extended_Degressive_Products {
 
         return null;
     }
-    
+
+    /**
+     * Retourne le prix/m² le plus bas de la table dégressive (palier au volume le plus élevé).
+     * Point d'entrée unique pour le widget "Prix le plus bas".
+     */
+    public function get_lowest_price_per_m2($product_id, $country = null) {
+        if ($country === null && class_exists('SHP_V2_International_Manager')) {
+            $country = SHP_V2_International_Manager::get_instance()->get_current_country();
+        }
+
+        $config = $this->get_config($product_id, $country);
+
+        if (!$config || empty($config['tiers'])) {
+            return null;
+        }
+
+        $prices = array_map(function ($tier) {
+            return (float) $tier['price_per_m2'];
+        }, $config['tiers']);
+
+        return min($prices);
+    }
+
     public function calculate_price($product_id, $m2, $country = null) {
         // v3.0 : Détection pays automatique si non fourni
         if ($country === null && class_exists('SHP_V2_International_Manager')) {

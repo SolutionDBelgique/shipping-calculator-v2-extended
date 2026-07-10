@@ -128,6 +128,44 @@ class SHP_V2_Extended_Ballot_Products {
     }
     
     /**
+     * Détecte si un produit est configuré en mode ballot
+     */
+    public function is_ballot($product_id) {
+        return get_post_meta($product_id, '_degressive_ballot_enabled', true) === 'yes';
+    }
+
+    /**
+     * Retourne le prix/ballot le plus bas de la table (palier au volume le plus élevé).
+     * Point d'entrée unique pour le widget "Prix le plus bas".
+     */
+    public function get_lowest_price_per_ballot($product_id, $country = null) {
+        if (!$this->is_ballot($product_id)) {
+            return null;
+        }
+
+        if ($country === null && class_exists('SHP_V2_International_Manager')) {
+            $country = SHP_V2_International_Manager::get_instance()->get_current_country();
+        }
+
+        if ($country && class_exists('SHP_V2_Country_Pricing')) {
+            $tiers = SHP_V2_Country_Pricing::get_instance()->get_ballot_tiers($product_id, $country);
+        } else {
+            $tiers_json = get_post_meta($product_id, '_ballot_tiers', true);
+            $tiers = $tiers_json ? json_decode($tiers_json, true) : [];
+        }
+
+        if (empty($tiers)) {
+            return null;
+        }
+
+        $prices = array_map(function ($tier) {
+            return (float) $tier['price_per_ballot'];
+        }, $tiers);
+
+        return min($prices);
+    }
+
+    /**
      * Calculer le prix pour une quantité de ballots
      */
     public function calculate_price($product_id, $quantity_ballots, $country = null) {
