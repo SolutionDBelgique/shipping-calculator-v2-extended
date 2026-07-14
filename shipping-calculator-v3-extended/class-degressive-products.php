@@ -122,7 +122,16 @@ class SHP_V2_Extended_Degressive_Products {
             return null;
         }
 
-        foreach ($config['tiers'] as $tier) {
+        return $this->find_active_tier($config['tiers'], $nb_palettes);
+    }
+
+    /**
+     * Cherche le palier actif dans un tableau de paliers déjà résolu.
+     * À utiliser en interne quand $config est déjà en mémoire, pour éviter
+     * de recharger la config (postmeta + JSON) à chaque appel.
+     */
+    private function find_active_tier($tiers, $nb_palettes) {
+        foreach ($tiers as $tier) {
             $min = (int) $tier['min_pallets'];
             $max = (int) $tier['max_pallets'];
 
@@ -171,7 +180,7 @@ class SHP_V2_Extended_Degressive_Products {
         $surface_per_pallet = $config['surface_per_pallet'];
         $nb_palettes = ceil($m2 / $surface_per_pallet);
 
-        $tier = $this->get_active_tier($product_id, $nb_palettes, $country);
+        $tier = $this->find_active_tier($config['tiers'], $nb_palettes);
 
         if (!$tier) {
             return null;
@@ -241,7 +250,7 @@ class SHP_V2_Extended_Degressive_Products {
 
         for ($i = 1; $i <= $max_pallets; $i++) {
             $m2 = $i * $surface_per_pallet;
-            $tier = $this->get_active_tier($product_id, $i, $country);
+            $tier = $this->find_active_tier($config['tiers'], $i);
 
             if ($tier) {
                 $total = $m2 * (float) $tier['price_per_m2'];
@@ -266,10 +275,12 @@ class SHP_V2_Extended_Degressive_Products {
         // Si on est en train de calculer le panier, WC va multiplier par quantité (1)
         // donc on doit retourner le prix TOTAL ici !
         
-        // Vérifier si on a des données dégressives stockées pour ce produit
+        // Vérifier si on a des données dégressives stockées pour CET article précis du panier
+        // IMPORTANT : comparer l'instance d'objet (===), pas juste le product_id, sinon deux
+        // lignes du même produit (m² différents) se partagent le prix de la première trouvée.
         if (WC()->cart) {
             foreach (WC()->cart->get_cart() as $cart_item) {
-                if ($cart_item['product_id'] == $product->get_id() && isset($cart_item['degressive_data'])) {
+                if ($cart_item['data'] === $product && isset($cart_item['degressive_data'])) {
                     // Retourner le prix TOTAL (pas le prix/m²)
                     return floatval($cart_item['degressive_data']['total']);
                 }
@@ -293,7 +304,12 @@ class SHP_V2_Extended_Degressive_Products {
         // Si pas dans le panier ou pas de données dégressives,
         // retourner le prix de base pour l'affichage boutique
         if ($this->is_degressive($product->get_id())) {
-            $config = $this->get_config($product->get_id());
+            // v3.0 : Détection pays automatique, comme calculate_price()/get_quantity_options(),
+            // sinon le prix affiché reste toujours calé sur les paliers FR pour les visiteurs étrangers.
+            $country = class_exists('SHP_V2_International_Manager')
+                ? SHP_V2_International_Manager::get_instance()->get_current_country()
+                : null;
+            $config = $this->get_config($product->get_id(), $country);
             if ($config && !empty($config['tiers'])) {
                 // Retourner le prix du premier palier (prix le plus haut) pour affichage
                 return $config['tiers'][0]['price_per_m2'];
@@ -404,12 +420,21 @@ class SHP_V2_Extended_Degressive_Products {
         foreach ($cart->get_cart() as $cart_item_key => $cart_item) {
             if (isset($cart_item['degressive_data'])) {
                 $total_price = floatval($cart_item['degressive_data']['total']);
-                
+
+                // SÉCURITÉ : la quantité doit rester figée à 1 — le prix stocké est déjà
+                // le TOTAL pour le m² choisi, pas un prix unitaire. Le champ quantité est
+                // seulement masqué côté front (shp_v2_ext_degressive_cart_quantity), donc
+                // rien n'empêche une requête forgée sur cart[clé][qty]. Sans ce garde-fou,
+                // WooCommerce multiplierait ce total par la quantité falsifiée.
+                if ((int) $cart_item['quantity'] !== 1) {
+                    $cart->cart_contents[$cart_item_key]['quantity'] = 1;
+                }
+
                 // Forcer le prix DIRECTEMENT sur l'objet dans le panier
                 $cart->cart_contents[$cart_item_key]['data']->set_price($total_price);
                 $cart->cart_contents[$cart_item_key]['data']->set_regular_price($total_price);
                 $cart->cart_contents[$cart_item_key]['data']->set_sale_price('');
-                
+
                 // AUSSI forcer line_subtotal ici pour être SÛR
                 $cart->cart_contents[$cart_item_key]['line_subtotal'] = $total_price;
                 $cart->cart_contents[$cart_item_key]['line_total'] = $total_price;
