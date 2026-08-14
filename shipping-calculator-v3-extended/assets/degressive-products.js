@@ -31,7 +31,7 @@ jQuery(document).ready(function($) {
             html += '</select>';
             html += '</div>';
             
-            html += '<div class="degressive-summary" style="background: #f0f6fc; border: 2px solid #2271b1; padding: 15px; margin: 20px 0; border-radius: 5px;">';
+            html += '<div class="degressive-summary" style="background: #90b8b1; border: 2px solid #2271b1; padding: 15px; margin: 20px 0; border-radius: 5px;">';
             html += '<div style="margin-bottom: 10px;"><strong>Prix unitaire :</strong> <span id="price-per-m2">--</span> / m²</div>';
             html += '<div style="margin-bottom: 10px;"><strong>Quantité :</strong> <span id="quantity-display">--</span></div>';
             html += '<div style="font-size: 20px; font-weight: bold; color: #2271b1;"><strong>TOTAL :</strong> <span id="total-price">--</span></div>';
