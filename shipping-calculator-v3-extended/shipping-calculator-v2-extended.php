@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Shipping Calculator V3 Extended
- * Version: 3.1.7
- * Description: Interface complète + Produits dégressifs au m² + Produits dégressifs par Ballot + Internationalisation + Codes promo Prix m²
+ * Version: 3.2.0
+ * Description: Interface complète + Produits dégressifs au m² + Produits dégressifs par Ballot + Internationalisation + Codes promo Prix m² + Tarif fixe par pays par produit
  * Author: SolutionD Belgique
  * Requires at least: 5.8
  * Requires PHP: 7.4
@@ -514,21 +514,84 @@ class SHP_V2_Extended_Product_Fields {
             'placeholder' => 'Ex: 40 dalles × 0.96 m²',
             'value' => get_post_meta($post->ID, '_palette_info_v2', true)
         ]);
-        
+
         echo '<p style="padding-left: 150px; color: #666; font-style: italic;">';
         echo '📦 <strong>Palette :</strong> Tarif selon règles pays<br>';
         echo '📦 <strong>Non-palette :</strong> Tarif selon règles pays';
         echo '</p>';
-        
+
+        echo '</div>';
+
+        // ===== Frais de port fixe par pays (override produit) =====
+        $is_fixed_override = get_post_meta($post->ID, '_shipping_fixed_override', true) === 'yes';
+
+        echo '<div style="border: 1px solid #d63638; padding: 15px; margin-top: 15px; background: #fcf0f1;">';
+        echo '<h4 style="margin-top: 0; color: #d63638;">🎯 Frais de port fixe par pays (ce produit uniquement)</h4>';
+
+        woocommerce_wp_checkbox([
+            'id' => '_shipping_fixed_override',
+            'label' => 'Activer un tarif fixe par pays',
+            'description' => 'Remplace le calcul standard (palette/non-palette) UNIQUEMENT pour ce produit.',
+            'value' => get_post_meta($post->ID, '_shipping_fixed_override', true)
+        ]);
+
+        echo '<div id="shipping_fixed_override_config" style="' . ($is_fixed_override ? '' : 'display:none;') . '">';
+
+        woocommerce_wp_text_input([
+            'id' => '_shipping_fixed_BE',
+            'label' => 'Frais de port Belgique (HT)',
+            'type' => 'number',
+            'custom_attributes' => ['step' => '0.01', 'min' => '0'],
+            'value' => get_post_meta($post->ID, '_shipping_fixed_BE', true)
+        ]);
+
+        woocommerce_wp_text_input([
+            'id' => '_shipping_fixed_FR',
+            'label' => 'Frais de port France (HT)',
+            'type' => 'number',
+            'custom_attributes' => ['step' => '0.01', 'min' => '0'],
+            'value' => get_post_meta($post->ID, '_shipping_fixed_FR', true)
+        ]);
+
+        echo '<p style="padding-left: 150px; color: #666; font-style: italic;">';
+        echo 'ℹ️ Si le pays de destination n\'a pas de montant renseigné ici, le calcul standard s\'applique.';
+        echo '</p>';
+
+        echo '</div>';
+
+        echo '<script>
+        jQuery(document).ready(function($) {
+            $("#_shipping_fixed_override").change(function() {
+                if ($(this).is(":checked")) {
+                    $("#shipping_fixed_override_config").show();
+                } else {
+                    $("#shipping_fixed_override_config").hide();
+                }
+            });
+        });
+        </script>';
+
         echo '</div>';
     }
-    
+
     public function save_fields($post_id) {
         $value = isset($_POST['_palette_complete_v2']) ? 'yes' : 'no';
         update_post_meta($post_id, '_palette_complete_v2', $value);
-        
+
         if (isset($_POST['_palette_info_v2'])) {
             update_post_meta($post_id, '_palette_info_v2', sanitize_text_field($_POST['_palette_info_v2']));
+        }
+
+        // Frais de port fixe par pays (override produit)
+        $fixed_override = isset($_POST['_shipping_fixed_override']) ? 'yes' : 'no';
+        update_post_meta($post_id, '_shipping_fixed_override', $fixed_override);
+
+        if (isset($_POST['_shipping_fixed_BE'])) {
+            update_post_meta($post_id, '_shipping_fixed_BE', wc_format_decimal($_POST['_shipping_fixed_BE']));
+        }
+
+        if (isset($_POST['_shipping_fixed_FR'])) {
+            update_post_meta($post_id, '_shipping_fixed_FR', wc_format_decimal($_POST['_shipping_fixed_FR']));
         }
     }
     
@@ -584,9 +647,10 @@ class SHP_V2_Extended_Calculator {
 
         $has_dalles  = ($analysis['dalles_palettes'] > 0 || $analysis['dalles_non_palettes'] > 0);
         $has_matelas = ($analysis['matelas_count'] > 0);
+        $has_fixed_override = ($analysis['fixed_override_cost'] > 0);
 
         // CAS LIVRAISON GRATUITE UNIQUEMENT : creer taux a 0EUR
-        if (!$has_dalles && !$has_matelas) {
+        if (!$has_dalles && !$has_matelas && !$has_fixed_override) {
             if ($analysis['nb_free_palettes'] > 0) {
                 $nb = $analysis['nb_free_palettes'];
                 $label = sprintf('Livraison GRATUITE - %d palette(s)', $nb);
@@ -613,6 +677,17 @@ class SHP_V2_Extended_Calculator {
 
         $total_cost = 0;
         $details    = [];
+
+        // === FRAIS FIXE PAR PAYS (override produit) ===
+        if ($analysis['fixed_override_cost'] > 0) {
+            $total_cost += $analysis['fixed_override_cost'];
+            $details[] = [
+                'type'    => 'fixed_override',
+                'label'   => 'Frais de port produit (tarif fixe)',
+                'cost'    => $analysis['fixed_override_cost'],
+                'details' => ['country' => $country],
+            ];
+        }
 
         // === FRAIS DALLES ===
         if ($analysis['dalles_palettes'] > 0) {
@@ -712,6 +787,7 @@ class SHP_V2_Extended_Calculator {
         $dalles_non_palettes = 0;
         $matelas_count = 0;
         $nb_free_palettes = 0;
+        $fixed_override_cost = 0;
 
         $matelas_category_id = (int) get_option('shp_v2_ext_matelas_category_id', 0);
 
@@ -719,6 +795,19 @@ class SHP_V2_Extended_Calculator {
             $product = $item['data'];
             $quantity = $item['quantity'];
             $product_id = $product->get_id();
+
+            // TYPE 0 : Frais de port fixe par pays (override produit)
+            $has_fixed_override = get_post_meta($product_id, '_shipping_fixed_override', true) === 'yes';
+
+            if ($has_fixed_override) {
+                $fixed_cost = (float) get_post_meta($product_id, '_shipping_fixed_' . $country, true);
+
+                if ($fixed_cost > 0) {
+                    $fixed_override_cost += $fixed_cost * $quantity;
+                    continue;
+                }
+                // Pas de montant pour ce pays : on retombe sur le calcul standard ci-dessous
+            }
 
             // VERIFIER LIVRAISON GRATUITE
             $is_free_shipping = get_post_meta($product_id, '_free_shipping_palette', true);
@@ -772,6 +861,7 @@ class SHP_V2_Extended_Calculator {
             'matelas_count'       => $matelas_count,
             'matelas_palettes'    => $matelas_count > 0 ? (int) ceil($matelas_count / 2) : 0,
             'nb_free_palettes'    => $nb_free_palettes,
+            'fixed_override_cost' => $fixed_override_cost,
             // Backward compat
             'nb_palettes'         => $dalles_palettes,
             'nb_non_palettes'     => $dalles_non_palettes,
@@ -956,6 +1046,10 @@ class SHP_V2_Extended_Calculator {
 
     private function build_label_v2($country, $analysis) {
         $parts = [];
+
+        if (!empty($analysis['fixed_override_cost']) && $analysis['fixed_override_cost'] > 0) {
+            $parts[] = 'produit(s) tarif fixe';
+        }
 
         if ($analysis['dalles_palettes'] > 0) {
             $parts[] = sprintf('%d palette(s) dalles', $analysis['dalles_palettes']);
