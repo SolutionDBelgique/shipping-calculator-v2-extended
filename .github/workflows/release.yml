@@ -19,7 +19,7 @@ jobs:
       - name: Lire la version dans le plugin
         id: version
         run: |
-          VERSION=$(grep -m1 "^\s*\*\s*Version:" shipping-calculator-v3-extended/shipping-calculator-v2-extended.php \
+          VERSION=$(grep -m1 "^\s*\*\s*Version:" mk-transport-calculator-v4/mk-transport-calculator-v4.php \
             | sed 's/.*Version:\s*//' | tr -d '[:space:]')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag=v$VERSION" >> $GITHUB_OUTPUT
@@ -41,8 +41,8 @@ jobs:
       - name: Construire le zip du plugin
         if: steps.check.outputs.exists == 'false'
         run: |
-          PLUGIN_DIR="shipping-calculator-v3-extended"
-          ZIP_NAME="shipping-calculator-v3-extended.zip"
+          PLUGIN_DIR="mk-transport-calculator-v4"
+          ZIP_NAME="mk-transport-calculator-v4.zip"
 
           mkdir -p dist/$PLUGIN_DIR
 
@@ -51,10 +51,6 @@ jobs:
             --exclude='.github' \
             --exclude='node_modules' \
             --exclude='dist' \
-            --exclude='*.xlsx' \
-            --exclude='package.json' \
-            --exclude='package-lock.json' \
-            --exclude='update-info.json' \
             $PLUGIN_DIR/ dist/$PLUGIN_DIR/
 
           cd dist
@@ -70,5 +66,5 @@ jobs:
             --repo "${{ github.repository }}" \
             --title "Version ${{ steps.version.outputs.version }}" \
             --notes "Release automatique — version ${{ steps.version.outputs.version }}" \
-            shipping-calculator-v3-extended.zip
+            mk-transport-calculator-v4.zip
           echo "Release ${{ steps.version.outputs.tag }} publiée avec succès."

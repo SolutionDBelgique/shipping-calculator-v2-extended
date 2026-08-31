@@ -48,7 +48,7 @@ class MK_V4_Admin {
 
         ?>
         <div class="wrap">
-            <h1>🚚 MK Transport Calculator — v<?php echo esc_html(MK_V4_VERSION); ?> (version d'essai simplifiée)</h1>
+            <h1>🚚 MK Transport Calculator V4 — v<?php echo esc_html(MK_V4_VERSION); ?></h1>
             <p style="color:#666;">Basé sur le cahier des charges "Facturation du transport" — MK Horse Solutions.</p>
 
             <h2 class="nav-tab-wrapper">
@@ -268,7 +268,7 @@ class MK_V4_Admin {
                     <td>
                         <label>
                             <input type="checkbox" name="mk_v4_debug" <?php checked($debug, 'yes'); ?> />
-                            Afficher le détail du calcul dans le panier et la commande (utile pour valider sur le staging)
+                            Afficher le détail du calcul dans le panier et la commande (utile pour vérifier un tarif)
                         </label>
                     </td>
                 </tr>

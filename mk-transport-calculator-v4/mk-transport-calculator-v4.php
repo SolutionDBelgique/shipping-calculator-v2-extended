@@ -1,8 +1,8 @@
 <?php
 /**
- * Plugin Name: MK Transport Calculator V4 (Essai simplifié)
+ * Plugin Name: MK Transport Calculator V4
  * Version: 4.1.0
- * Description: Version d'essai simplifiée du calcul des frais de transport — barème fixe pour les dalles, système au pourcentage (tranche x zone) pour tous les autres produits, tarif de transport fixe optionnel par produit (bypass). Plugin indépendant, à tester sur staging.
+ * Description: Calcul des frais de transport — barème fixe pour les dalles, système au pourcentage (tranche x zone) pour tous les autres produits, tarif de transport fixe optionnel par produit (bypass). Remplace Shipping Calculator V3 Extended.
  * Author: SolutionD Belgique
  * Requires at least: 5.8
  * Requires PHP: 7.4
@@ -124,7 +124,7 @@ add_action('admin_notices', function () {
     if (get_transient('mk_v4_activated')) {
         ?>
         <div class="notice notice-success is-dismissible">
-            <h3>✅ MK Transport Calculator V4 (essai simplifié) activé !</h3>
+            <h3>✅ MK Transport Calculator V4 activé !</h3>
             <p>Pensez à créer/activer une méthode de livraison "MK Transport Calculator V4" dans vos zones d'expédition WooCommerce.</p>
             <p><a href="<?php echo admin_url('admin.php?page=mk-transport-v4'); ?>" class="button button-primary">Configurer →</a></p>
         </div>

@@ -49,7 +49,7 @@ class MK_V4_Data {
      * entrée "69" car elles appartiennent à la même zone tarifaire (C).
      * Voir cahier des charges §4 : le detail metropole/hors-metropole n'affecte
      * pas le pourcentage applique (qui ne depend que de la zone), donc ce point
-     * n'est pas bloquant pour la logique simplifiee v4.
+     * n'est pas bloquant pour la logique de calcul v4.
      */
     private function build_zones_par_departement() {
         $source = $this->data['france']['departements_par_zone'] ?? [];
