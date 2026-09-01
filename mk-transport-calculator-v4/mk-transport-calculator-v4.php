@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: MK Transport Calculator V4
- * Version: 4.1.0
+ * Version: 4.2.0
  * Description: Calcul des frais de transport — barème fixe pour les dalles, système au pourcentage (tranche x zone) pour tous les autres produits, tarif de transport fixe optionnel par produit (bypass). Remplace Shipping Calculator V3 Extended.
  * Author: SolutionD Belgique
  * Requires at least: 5.8
@@ -14,13 +14,24 @@ if (!defined('ABSPATH')) {
 }
 
 define('MK_V4_PLUGIN_DIR', plugin_dir_path(__FILE__));
-define('MK_V4_VERSION', '4.1.0');
+define('MK_V4_VERSION', '4.2.0');
 
 require_once MK_V4_PLUGIN_DIR . 'includes/class-mk-v4-data.php';
 require_once MK_V4_PLUGIN_DIR . 'includes/class-mk-v4-calculator.php';
 require_once MK_V4_PLUGIN_DIR . 'includes/class-mk-v4-admin.php';
 require_once MK_V4_PLUGIN_DIR . 'includes/class-mk-v4-degressive-pricing.php';
 require_once MK_V4_PLUGIN_DIR . 'includes/class-mk-v4-product-fields.php';
+require_once MK_V4_PLUGIN_DIR . 'includes/class-mk-v4-updater.php';
+
+// ===== Mise à jour automatique via GitHub Releases =====
+add_action('plugins_loaded', function () {
+    if (!is_admin()) {
+        return;
+    }
+    $updater = new MK_V4_Updater(__FILE__, 'SolutionDBelgique', 'shipping-calculator-v2-extended');
+    $updater->init();
+});
+// ===== FIN Mise à jour automatique =====
 
 // Vérifier WooCommerce
 add_action('admin_init', function () {

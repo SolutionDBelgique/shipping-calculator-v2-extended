@@ -54,15 +54,12 @@ require_once __DIR__ . '/international-migration.php';
 // ===== FIN Internationalisation =====
 
 // ===== Mise à jour automatique via GitHub Releases =====
+// DÉSACTIVÉE depuis le 2026-09-01 : MK Transport Calculator V4 est devenu le
+// plugin officiel et les releases du dépôt sont désormais des v4.x.x. Laisser
+// cet updater actif proposerait à tort le zip de V4 comme « mise à jour » de
+// V3 (slug de plugin différent → écrasement de dossier hasardeux). V3 reste
+// dans le dépôt en simple backup figé.
 require_once __DIR__ . '/class-plugin-updater.php';
-
-add_action('plugins_loaded', function () {
-    if (!is_admin()) {
-        return;
-    }
-    $updater = new SHP_Plugin_Updater(__FILE__, 'SolutionDBelgique', 'shipping-calculator-v2-extended');
-    $updater->init();
-});
 // ===== FIN Mise à jour automatique =====
 
 // Vérifier WooCommerce
