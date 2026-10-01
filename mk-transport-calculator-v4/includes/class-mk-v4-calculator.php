@@ -3,9 +3,10 @@
  * MK Transport Calculator V4 - Moteur de calcul
  *
  * Implémente le cahier des charges "Facturation du transport" :
- * - Dalles de stabilisation : barème fixe par nombre de palettes (inchangé, non modifiable)
- * - Tous les autres produits : système au pourcentage (tranche valeur x coefficient zone),
- *   avec plafonnement au %max de la tranche
+ * - Dalles de stabilisation : prix par palette selon le nombre de palettes et le pays
+ *   (grille France ou grille Belgique)
+ * - Tous les autres produits : système au pourcentage (taux de la tranche de valeur,
+ *   uniforme par pays), avec un minimum de MIN_AUTRES_COST
  * - Produit à tarif de transport fixe : bypass total du calcul ci-dessus pour ce
  *   produit — il est exclu des sous-totaux dalles/pourcentage et son montant fixe
  *   (× quantité) est simplement ajouté au total
@@ -25,6 +26,8 @@ class MK_V4_Calculator {
     const DALLE_META_KEY = '_palette_complete_v2';
     const FIXED_ENABLED_META_KEY = '_mk_v4_fixed_shipping_enabled';
     const FIXED_AMOUNT_META_KEY = '_mk_v4_fixed_shipping_amount';
+    // Minimum de frais pour la partie "autres produits" (hors dalles et hors tarif fixe)
+    const MIN_AUTRES_COST = 90.0;
 
     public static function get_instance() {
         if (self::$instance === null) {
@@ -51,7 +54,7 @@ class MK_V4_Calculator {
             return $rates;
         }
 
-        $dalles_cost  = $this->calculate_dalles_cost($analysis['dalles_qty']);
+        $dalles_cost  = $this->calculate_dalles_cost($country, $analysis['dalles_qty']);
         $autres_calc  = $this->calculate_percentage_cost($country, $postcode, $analysis['autres_subtotal']);
         $autres_cost  = $autres_calc['cost'];
         $fixed_cost   = round($analysis['fixed_cost'], 2);
@@ -137,108 +140,48 @@ class MK_V4_Calculator {
     }
 
     /**
-     * Barème fixe dalles (cahier des charges §2) : totaux forfaitaires, pas un prix/palette.
-     * Ne jamais remonter le tarif symbolique 5+ automatiquement.
+     * Dalles : prix par palette selon le nombre total de palettes (grille du pays).
+     * Ex. France 3 palettes = 3 × 115 € = 345 €.
      */
-    private function calculate_dalles_cost($nb_palettes) {
+    private function calculate_dalles_cost($country, $nb_palettes) {
         if ($nb_palettes <= 0) {
             return 0.0;
         }
 
-        $bareme = $this->data->get_bareme_dalles();
+        $bareme = $this->data->get_bareme_dalles($country);
+        $key = $nb_palettes >= 5 ? '5_plus' : (string) $nb_palettes;
 
-        if ($nb_palettes >= 5) {
-            return (float) $bareme['5_plus'];
-        }
-
-        return (float) $bareme[$nb_palettes];
+        return round($nb_palettes * (float) ($bareme[$key] ?? 0), 2);
     }
 
     /**
-     * Système au pourcentage pour tous les produits hors dalles (cahier des charges §3).
+     * Système au pourcentage pour tous les produits hors dalles :
+     * taux de la tranche de valeur (grille Belgique pour BE, grille France sinon),
+     * avec un minimum de MIN_AUTRES_COST.
      */
     private function calculate_percentage_cost($country, $postcode, $subtotal) {
-        if ($subtotal <= 0) {
-            return [
-                'cost' => 0.0,
-                'country' => $country,
-                'zone' => null,
-                'pct_final' => 0,
-                'tranche' => null,
-                'coefficient' => null,
-                'plafonne' => false,
-            ];
-        }
-
-        if ($country === 'BE') {
-            return $this->calculate_percentage_belgique($subtotal);
-        }
-
-        // France + tout autre pays non couvert par le cahier des charges :
-        // on applique la grille France avec la zone la plus prudente (D) par défaut.
-        return $this->calculate_percentage_france($country, $postcode, $subtotal);
-    }
-
-    private function calculate_percentage_france($country, $postcode, $subtotal) {
-        $zone = $this->get_zone($country, $postcode);
-
-        $tranche = $this->find_tranche($this->data->get_tranches_france(), $subtotal);
+        $tranches = ($country === 'BE') ? $this->data->get_tranches_belgique() : $this->data->get_tranches_france();
+        $tranche  = $subtotal > 0 ? $this->find_tranche($tranches, $subtotal) : null;
 
         if (!$tranche) {
             return [
-                'cost' => 0.0,
-                'country' => $country,
-                'zone' => $zone,
+                'cost'      => 0.0,
+                'country'   => $country,
                 'pct_final' => 0,
-                'tranche' => null,
-                'coefficient' => null,
-                'plafonne' => false,
+                'tranche'   => null,
+                'minimum'   => false,
             ];
         }
 
-        $coefficients = $this->data->get_coefficients_geo();
-        $coefficient  = $coefficients[$zone] ?? $coefficients['D'];
-
-        $pct_brut  = $tranche['pct_min'] * $coefficient;
-        $pct_final = min($pct_brut, $tranche['pct_max']);
-        $plafonne  = $pct_brut > $tranche['pct_max'];
+        $cost    = round($subtotal * $tranche['pct'], 2);
+        $minimum = $cost < self::MIN_AUTRES_COST;
 
         return [
-            'cost'        => round($subtotal * $pct_final, 2),
-            'country'     => $country,
-            'zone'        => $zone,
-            'pct_final'   => $pct_final,
-            'tranche'     => $tranche,
-            'coefficient' => $coefficient,
-            'plafonne'    => $plafonne,
-        ];
-    }
-
-    private function calculate_percentage_belgique($subtotal) {
-        $tranche = $this->find_tranche($this->data->get_tranches_belgique(), $subtotal);
-
-        if (!$tranche) {
-            return [
-                'cost' => 0.0,
-                'country' => 'BE',
-                'zone' => null,
-                'pct_final' => 0,
-                'tranche' => null,
-                'coefficient' => null,
-                'plafonne' => false,
-            ];
-        }
-
-        $pct_final = $tranche['pct_min'];
-
-        return [
-            'cost'        => round($subtotal * $pct_final, 2),
-            'country'     => 'BE',
-            'zone'        => null,
-            'pct_final'   => $pct_final,
-            'tranche'     => $tranche,
-            'coefficient' => null,
-            'plafonne'    => false,
+            'cost'      => $minimum ? self::MIN_AUTRES_COST : $cost,
+            'country'   => $country,
+            'pct_final' => $tranche['pct'],
+            'tranche'   => $tranche,
+            'minimum'   => $minimum,
         ];
     }
 
@@ -251,29 +194,6 @@ class MK_V4_Calculator {
             }
         }
         return null;
-    }
-
-    /**
-     * Détermine la zone géographique (A-D) pour un pays/code postal donné.
-     * - Pays != FR (y compris BE, qui n'utilise pas de zone) : zone D par défaut (le plus sûr financièrement).
-     * - FR avec département hors table (Corse 2A/2B, DOM-TOM 97/98) : zone D par défaut.
-     */
-    public function get_zone($country, $postcode) {
-        if ($country !== 'FR') {
-            return 'D';
-        }
-
-        $postcode_clean = preg_replace('/[^0-9]/', '', (string) $postcode);
-
-        if (strlen($postcode_clean) < 2) {
-            return 'D';
-        }
-
-        $dept_key = substr($postcode_clean, 0, 2);
-
-        $zone = $this->data->get_zone_departement($dept_key);
-
-        return $zone ?: 'D';
     }
 
     public function render_debug_panel() {
@@ -302,18 +222,12 @@ class MK_V4_Calculator {
                             <td style="font-weight: 600;">Sous-total autres produits :</td>
                             <td><?php echo wc_price($calc['autres_subtotal']); ?></td>
                         </tr>
-                        <?php if (!empty($details['zone'])): ?>
-                        <tr>
-                            <td style="font-weight: 600;">Zone géo :</td>
-                            <td><?php echo esc_html($details['zone']); ?> (coefficient ×<?php echo esc_html($details['coefficient']); ?>)</td>
-                        </tr>
-                        <?php endif; ?>
                         <?php if (!empty($details['tranche'])): ?>
                         <tr>
                             <td style="font-weight: 600;">% appliqué :</td>
                             <td>
                                 <?php echo esc_html(round($details['pct_final'] * 100, 2)); ?>%
-                                <?php echo !empty($details['plafonne']) ? ' (plafonné)' : ''; ?>
+                                <?php echo !empty($details['minimum']) ? ' (minimum ' . wc_price(self::MIN_AUTRES_COST) . ' appliqué)' : ''; ?>
                             </td>
                         </tr>
                         <?php endif; ?>

@@ -54,7 +54,6 @@ class MK_V4_Admin {
             <h2 class="nav-tab-wrapper">
                 <a href="?page=mk-transport-v4&tab=test" class="nav-tab <?php echo $tab === 'test' ? 'nav-tab-active' : ''; ?>">🧪 Tester</a>
                 <a href="?page=mk-transport-v4&tab=bareme" class="nav-tab <?php echo $tab === 'bareme' ? 'nav-tab-active' : ''; ?>">📋 Barème / Règles</a>
-                <a href="?page=mk-transport-v4&tab=zones" class="nav-tab <?php echo $tab === 'zones' ? 'nav-tab-active' : ''; ?>">🌍 Zones départements</a>
                 <a href="?page=mk-transport-v4&tab=config" class="nav-tab <?php echo $tab === 'config' ? 'nav-tab-active' : ''; ?>">⚙️ Configuration</a>
             </h2>
 
@@ -62,9 +61,6 @@ class MK_V4_Admin {
             switch ($tab) {
                 case 'bareme':
                     $this->tab_bareme();
-                    break;
-                case 'zones':
-                    $this->tab_zones();
                     break;
                 case 'config':
                     $this->tab_config();
@@ -91,7 +87,7 @@ class MK_V4_Admin {
 
             $dalles_method = $reflect->getMethod('calculate_dalles_cost');
             $dalles_method->setAccessible(true);
-            $dalles_cost = $dalles_method->invoke($this->calculator, $dalles);
+            $dalles_cost = $dalles_method->invoke($this->calculator, strtoupper($country), $dalles);
 
             $pct_method = $reflect->getMethod('calculate_percentage_cost');
             $pct_method->setAccessible(true);
@@ -106,7 +102,7 @@ class MK_V4_Admin {
         }
         ?>
         <h2>🧪 Simuler un calcul</h2>
-        <p>Utilisez les 3 exemples du cahier des charges pour valider : ex. département 24, 1390€ → 181,40€ attendu.</p>
+        <p>Ex. : France, 1390€ d'autres produits → 14% = 194,60€ ; France, 3 palettes → 3 × 115€ = 345€.</p>
 
         <form method="post" style="max-width:500px;">
             <table class="form-table">
@@ -147,13 +143,10 @@ class MK_V4_Admin {
                 <h3>Résultat</h3>
                 <table class="widefat striped">
                     <tr><td>Coût dalles</td><td><strong><?php echo wc_price($result['dalles_cost']); ?></strong></td></tr>
-                    <?php if (!empty($result['autres_calc']['zone'])): ?>
-                    <tr><td>Zone détectée</td><td><?php echo esc_html($result['autres_calc']['zone']); ?> (coefficient ×<?php echo esc_html($result['autres_calc']['coefficient']); ?>)</td></tr>
-                    <?php endif; ?>
                     <?php if (!empty($result['autres_calc']['tranche'])): ?>
                     <tr><td>% appliqué</td><td>
                         <?php echo esc_html(round($result['autres_calc']['pct_final'] * 100, 2)); ?>%
-                        <?php echo !empty($result['autres_calc']['plafonne']) ? ' <span style="color:#d63638;">(plafonné au max de la tranche)</span>' : ''; ?>
+                        <?php echo !empty($result['autres_calc']['minimum']) ? ' <span style="color:#d63638;">(minimum ' . wc_price(MK_V4_Calculator::MIN_AUTRES_COST) . ' appliqué)</span>' : ''; ?>
                     </td></tr>
                     <?php endif; ?>
                     <tr><td>Coût autres produits</td><td><strong><?php echo wc_price($result['autres_calc']['cost']); ?></strong></td></tr>
@@ -172,56 +165,42 @@ class MK_V4_Admin {
 
     private function tab_bareme() {
         ?>
-        <h2>📋 Barème dalles (fixe, inchangé)</h2>
-        <table class="widefat striped" style="max-width:500px;">
-            <thead><tr><th>Palettes</th><th>Tarif</th></tr></thead>
-            <tbody>
-                <tr><td>1 palette</td><td>110 €</td></tr>
-                <tr><td>2 palettes</td><td>180 €</td></tr>
-                <tr><td>3 palettes</td><td>240 €</td></tr>
-                <tr><td>4 palettes</td><td>290 €</td></tr>
-                <tr><td>5+ palettes</td><td>1 € (symbolique — incitatif volume, ne jamais remonter)</td></tr>
-            </tbody>
-        </table>
-
-        <h2 style="margin-top:30px;">🇫🇷 France — tranches (avant coefficient de zone)</h2>
+        <h2>📋 Barème dalles (prix par palette)</h2>
         <table class="widefat striped" style="max-width:600px;">
-            <thead><tr><th>Valeur commande</th><th>% min</th><th>% max</th></tr></thead>
+            <thead><tr><th>Palettes</th><th>🇫🇷 France (et autres pays)</th><th>🇧🇪 Belgique</th></tr></thead>
             <tbody>
-                <?php foreach ($this->data->get_tranches_france() as $t): ?>
+                <?php
+                $bareme_fr = $this->data->get_bareme_dalles('FR');
+                $bareme_be = $this->data->get_bareme_dalles('BE');
+                foreach (['1', '2', '3', '4', '5_plus'] as $key):
+                ?>
                 <tr>
-                    <td><?php echo esc_html($t['min']); ?>€ - <?php echo $t['max'] === null ? '∞' : esc_html($t['max']) . '€'; ?></td>
-                    <td><?php echo esc_html($t['pct_min'] * 100); ?>%</td>
-                    <td><?php echo esc_html($t['pct_max'] * 100); ?>%</td>
+                    <td><?php echo $key === '5_plus' ? '5 palettes et +' : esc_html($key) . ' palette' . ($key === '1' ? '' : 's'); ?></td>
+                    <td><?php echo esc_html($bareme_fr[$key] ?? '-'); ?> € / palette</td>
+                    <td><?php echo esc_html($bareme_be[$key] ?? '-'); ?> € / palette</td>
                 </tr>
                 <?php endforeach; ?>
             </tbody>
         </table>
+        <p><code>coût dalles = nombre de palettes × prix par palette</code> (ex. France 3 palettes = 3 × 115 € = 345 €)</p>
 
-        <h3 style="margin-top:20px;">Coefficients géographiques (France)</h3>
-        <table class="widefat striped" style="max-width:400px;">
-            <thead><tr><th>Zone</th><th>Coefficient</th></tr></thead>
-            <tbody>
-                <?php foreach ($this->data->get_coefficients_geo() as $zone => $coeff): ?>
-                <tr><td>Zone <?php echo esc_html($zone); ?></td><td>×<?php echo esc_html($coeff); ?></td></tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
-        <p><code>% final = MIN( %min_tranche × coefficient_zone , %max_tranche )</code></p>
-
-        <h2 style="margin-top:30px;">🇧🇪 Belgique — tranches (pas de coefficient, %min appliqué directement)</h2>
+        <h2 style="margin-top:30px;">📦 Autres produits — % de la valeur commande</h2>
         <table class="widefat striped" style="max-width:600px;">
-            <thead><tr><th>Valeur commande</th><th>% min (appliqué)</th><th>% max</th></tr></thead>
+            <thead><tr><th>Valeur commande</th><th>🇫🇷 France (et autres pays)</th><th>🇧🇪 Belgique</th></tr></thead>
             <tbody>
-                <?php foreach ($this->data->get_tranches_belgique() as $t): ?>
+                <?php
+                $tranches_be = $this->data->get_tranches_belgique();
+                foreach ($this->data->get_tranches_france() as $i => $t):
+                ?>
                 <tr>
                     <td><?php echo esc_html($t['min']); ?>€ - <?php echo $t['max'] === null ? '∞' : esc_html($t['max']) . '€'; ?></td>
-                    <td><?php echo esc_html($t['pct_min'] * 100); ?>%</td>
-                    <td><?php echo esc_html($t['pct_max'] * 100); ?>%</td>
+                    <td><?php echo esc_html($t['pct'] * 100); ?>%</td>
+                    <td><?php echo isset($tranches_be[$i]) ? esc_html($tranches_be[$i]['pct'] * 100) . '%' : '-'; ?></td>
                 </tr>
                 <?php endforeach; ?>
             </tbody>
         </table>
+        <p>Taux unique par pays (pas de coefficient de zone). <strong>Minimum : <?php echo wc_price(MK_V4_Calculator::MIN_AUTRES_COST); ?></strong> de frais sur la partie « autres produits » dès qu'il y en a dans le panier.</p>
 
         <p style="margin-top:20px; color:#666; font-style:italic;">
             Commande mixte : coût dalles + coût autres produits calculés séparément sur leurs sous-totaux respectifs, puis additionnés en une seule ligne "Frais de livraison".
@@ -238,21 +217,6 @@ class MK_V4_Admin {
             <li>Les autres produits du panier restent calculés normalement ; les montants sont ensuite additionnés dans la ligne unique "Frais de livraison".</li>
             <li>Si la case « Palette complète » est aussi cochée sur ce produit, le tarif fixe l'emporte (le produit ne compte pas comme dalle).</li>
         </ul>
-        <?php
-    }
-
-    private function tab_zones() {
-        ?>
-        <h2>🌍 Zones par département (France)</h2>
-        <p style="color:#666;">Département 69 (Rhône) : les deux entrées 69D/69M de la grille transporteur appartiennent à la même zone (C) — fusionnées ici, non bloquant pour ce calcul. Départements absents de cette table (Corse 2A/2B, DOM-TOM 97/98) : zone D appliquée par défaut.</p>
-        <table class="widefat striped" style="max-width:400px;">
-            <thead><tr><th>Département</th><th>Zone</th></tr></thead>
-            <tbody>
-                <?php foreach ($this->data->get_zones_par_departement() as $dept => $zone): ?>
-                <tr><td><?php echo esc_html($dept); ?></td><td>Zone <?php echo esc_html($zone); ?></td></tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
         <?php
     }
 

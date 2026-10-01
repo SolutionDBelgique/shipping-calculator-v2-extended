@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: MK Transport Calculator V4
- * Version: 4.2.0
- * Description: Calcul des frais de transport — barème fixe pour les dalles, système au pourcentage (tranche x zone) pour tous les autres produits, tarif de transport fixe optionnel par produit (bypass). Remplace Shipping Calculator V3 Extended.
+ * Version: 4.3.0
+ * Description: Calcul des frais de transport — prix par palette pour les dalles (grille France / Belgique), système au pourcentage par tranche (minimum 90 €) pour tous les autres produits, tarif de transport fixe optionnel par produit (bypass). Remplace Shipping Calculator V3 Extended.
  * Author: SolutionD Belgique
  * Requires at least: 5.8
  * Requires PHP: 7.4
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
 }
 
 define('MK_V4_PLUGIN_DIR', plugin_dir_path(__FILE__));
-define('MK_V4_VERSION', '4.2.0');
+define('MK_V4_VERSION', '4.3.0');
 
 require_once MK_V4_PLUGIN_DIR . 'includes/class-mk-v4-data.php';
 require_once MK_V4_PLUGIN_DIR . 'includes/class-mk-v4-calculator.php';
@@ -58,7 +58,7 @@ add_action('woocommerce_shipping_init', function () {
             $this->id = 'mk_v4_transport';
             $this->instance_id = absint($instance_id);
             $this->method_title = 'MK Transport Calculator V4';
-            $this->method_description = 'Calcul automatique : barème fixe dalles + système au pourcentage pour les autres produits.';
+            $this->method_description = 'Calcul automatique : prix par palette pour les dalles + système au pourcentage (minimum 90 €) pour les autres produits.';
             $this->supports = ['shipping-zones', 'instance-settings'];
             $this->enabled = 'yes';
 
