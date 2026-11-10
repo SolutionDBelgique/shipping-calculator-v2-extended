@@ -64,6 +64,7 @@ jobs:
         run: |
           gh release create "${{ steps.version.outputs.tag }}" \
             --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
             --title "Version ${{ steps.version.outputs.version }}" \
             --notes "Release automatique — MK Transport Calculator V4 ${{ steps.version.outputs.version }}" \
             --latest \
