@@ -9,7 +9,8 @@
  *   uniforme par pays), avec un minimum de MIN_AUTRES_COST
  * - Produit à tarif de transport fixe : bypass total du calcul ci-dessus pour ce
  *   produit — il est exclu des sous-totaux dalles/pourcentage et son montant fixe
- *   (× quantité) est simplement ajouté au total
+ *   (× quantité) est simplement ajouté au total. Un montant spécifique France peut
+ *   être saisi : il remplace le montant général pour les livraisons en France.
  * - Commande mixte : tous les montants sont additionnés et affichés en UNE seule ligne
  */
 
@@ -26,6 +27,9 @@ class MK_V4_Calculator {
     const DALLE_META_KEY = '_palette_complete_v2';
     const FIXED_ENABLED_META_KEY = '_mk_v4_fixed_shipping_enabled';
     const FIXED_AMOUNT_META_KEY = '_mk_v4_fixed_shipping_amount';
+    // Montant fixe spécifique à un pays : _mk_v4_fixed_shipping_amount_FR
+    const FIXED_AMOUNT_COUNTRY_META_PREFIX = '_mk_v4_fixed_shipping_amount_';
+    const FIXED_COUNTRIES = ['FR' => 'France'];
     // Minimum de frais pour la partie "autres produits" (hors dalles et hors tarif fixe)
     const MIN_AUTRES_COST = 90.0;
 
@@ -48,7 +52,7 @@ class MK_V4_Calculator {
         $country  = strtoupper($package['destination']['country']);
         $postcode = $package['destination']['postcode'];
 
-        $analysis = $this->analyze_cart($package['contents']);
+        $analysis = $this->analyze_cart($package['contents'], $country);
 
         if ($analysis['dalles_qty'] <= 0 && $analysis['autres_subtotal'] <= 0 && $analysis['fixed_cost'] <= 0) {
             return $rates;
@@ -94,7 +98,37 @@ class MK_V4_Calculator {
      * - sous-total (hors taxe) des autres produits → système au pourcentage
      * - produits à tarif de transport fixe → montant × quantité, hors des deux autres
      */
-    private function analyze_cart($cart_items) {
+    /**
+     * Montant fixe de transport par unité pour un produit et un pays de livraison.
+     *
+     * - Case « Forcer un tarif de transport fixe » décochée → null (calcul normal)
+     * - Pays avec montant spécifique rempli (ex. France) → ce montant
+     * - Sinon → montant général ; s'il est vide → null (calcul normal pour ce pays)
+     *
+     * @return float|null
+     */
+    public static function get_fixed_unit_amount($product_id, $country) {
+        if (get_post_meta($product_id, self::FIXED_ENABLED_META_KEY, true) !== 'yes') {
+            return null;
+        }
+
+        $country = strtoupper((string) $country);
+        if (isset(self::FIXED_COUNTRIES[$country])) {
+            $country_amount = get_post_meta($product_id, self::FIXED_AMOUNT_COUNTRY_META_PREFIX . $country, true);
+            if ($country_amount !== '' && is_numeric($country_amount)) {
+                return (float) $country_amount;
+            }
+        }
+
+        $amount = get_post_meta($product_id, self::FIXED_AMOUNT_META_KEY, true);
+        if ($amount !== '' && is_numeric($amount)) {
+            return (float) $amount;
+        }
+
+        return null;
+    }
+
+    private function analyze_cart($cart_items, $country = '') {
         $dalles_qty      = 0;
         $autres_subtotal = 0.0;
         $fixed_cost      = 0.0;
@@ -108,8 +142,9 @@ class MK_V4_Calculator {
 
             // Bypass : un tarif de transport fixe au niveau produit court-circuite
             // le barème dalles ET le système au pourcentage pour cette ligne.
-            if (get_post_meta($product_id, self::FIXED_ENABLED_META_KEY, true) === 'yes') {
-                $unit_amount = (float) get_post_meta($product_id, self::FIXED_AMOUNT_META_KEY, true);
+            // Le montant peut être spécifique au pays de livraison (ex. France).
+            $unit_amount = self::get_fixed_unit_amount($product_id, $country);
+            if ($unit_amount !== null) {
                 $line_fixed  = $unit_amount * $quantity;
 
                 $fixed_cost   += $line_fixed;

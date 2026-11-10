@@ -247,6 +247,7 @@ class MK_V4_Admin {
                     <td>
                         Champs produit : <code>_mk_v4_fixed_shipping_enabled</code> (case "Forcer un tarif de transport fixe") +
                         <code>_mk_v4_fixed_shipping_amount</code> (montant par unité), onglet Expédition du produit.
+                        Montant spécifique France : <code>_mk_v4_fixed_shipping_amount_FR</code> (prioritaire pour les livraisons en France).
                         Voir l'onglet « Barème / Règles » pour la logique.
                     </td>
                 </tr>

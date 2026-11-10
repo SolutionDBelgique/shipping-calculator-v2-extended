@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: MK Transport Calculator V4
- * Version: 4.3.0
- * Description: Calcul des frais de transport — prix par palette pour les dalles (grille France / Belgique), système au pourcentage par tranche (minimum 90 €) pour tous les autres produits, tarif de transport fixe optionnel par produit (bypass). Remplace Shipping Calculator V3 Extended.
+ * Version: 4.4.0
+ * Description: Calcul des frais de transport — prix par palette pour les dalles (grille France / Belgique), système au pourcentage par tranche (minimum 90 €) pour tous les autres produits, tarif de transport fixe optionnel par produit (bypass), avec montant spécifique France. Remplace Shipping Calculator V3 Extended.
  * Author: SolutionD Belgique
  * Requires at least: 5.8
  * Requires PHP: 7.4
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
 }
 
 define('MK_V4_PLUGIN_DIR', plugin_dir_path(__FILE__));
-define('MK_V4_VERSION', '4.3.0');
+define('MK_V4_VERSION', '4.4.0');
 
 require_once MK_V4_PLUGIN_DIR . 'includes/class-mk-v4-data.php';
 require_once MK_V4_PLUGIN_DIR . 'includes/class-mk-v4-calculator.php';
