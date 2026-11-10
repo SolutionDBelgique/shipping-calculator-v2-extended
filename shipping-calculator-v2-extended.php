@@ -53,10 +53,6 @@ require_once __DIR__ . '/international-admin-tab.php';
 require_once __DIR__ . '/international-migration.php';
 // ===== FIN Internationalisation =====
 
-// ===== NOUVEAU v3.2.0 : Frais de port fixes par palette (confort / nutrition) =====
-require_once __DIR__ . '/class-fixed-shipping.php';
-// ===== FIN Frais de port fixes =====
-
 // Vérifier WooCommerce
 add_action('admin_init', function() {
     if (!class_exists('WooCommerce')) {
@@ -462,6 +458,130 @@ class SHP_V2_Extended_Rules {
             'imported' => $imported,
             'message' => sprintf('%d règle(s) importée(s)', $imported)
         ];
+    }
+}
+
+/**
+ * ===========================================
+ * CLASSE FRAIS DE PORT FIXES PAR PALETTE (v3.2.0)
+ * Produits confort / nutrition : foin, copeaux...
+ * ===========================================
+ *
+ * Champs fiche produit (onglet Livraison) :
+ *  - _fixed_shipping_pallet     : prix fixe par palette, tous pays (optionnel)
+ *  - _fixed_shipping_pallet_FR  : prix fixe par palette France (prioritaire en France)
+ * Le montant (prix x palettes) s'additionne aux autres frais de port du panier.
+ */
+class SHP_V2_Fixed_Shipping {
+
+    const META_DEFAULT = '_fixed_shipping_pallet';
+    const META_COUNTRY_PREFIX = '_fixed_shipping_pallet_';
+
+    /** Pays pour lesquels un prix spécifique peut être saisi */
+    const COUNTRIES = [
+        'FR' => 'France',
+    ];
+
+    private static $instance = null;
+
+    public static function get_instance() {
+        if (self::$instance === null) {
+            self::$instance = new self();
+        }
+        return self::$instance;
+    }
+
+    private function __construct() {
+        add_action('woocommerce_product_options_shipping', [$this, 'add_fields'], 5);
+        add_action('woocommerce_process_product_meta', [$this, 'save_fields']);
+    }
+
+    /**
+     * Prix fixe par palette applicable à un produit pour un pays.
+     *
+     * @return float|null null = pas de prix fixe, calcul standard
+     */
+    public function get_price_per_pallet($product_id, $country) {
+        $country = strtoupper((string) $country);
+
+        if (isset(self::COUNTRIES[$country])) {
+            $value = get_post_meta($product_id, self::META_COUNTRY_PREFIX . $country, true);
+            if ($value !== '' && $value !== false && is_numeric($value)) {
+                return (float) $value;
+            }
+        }
+
+        $value = get_post_meta($product_id, self::META_DEFAULT, true);
+        if ($value !== '' && $value !== false && is_numeric($value)) {
+            return (float) $value;
+        }
+
+        return null;
+    }
+
+    /**
+     * Nombre de palettes d'une ligne panier (arrondi à la palette supérieure).
+     */
+    public function get_item_pallets($cart_item) {
+        if (isset($cart_item['ballot_data']['palettes'])) {
+            $pallets = (float) $cart_item['ballot_data']['palettes'];
+        } elseif (isset($cart_item['degressive_data']['palettes'])) {
+            $pallets = (float) $cart_item['degressive_data']['palettes'];
+        } else {
+            // Produit simple : 1 unité = 1 palette
+            $pallets = (float) $cart_item['quantity'];
+        }
+
+        return (int) ceil($pallets - 0.0001);
+    }
+
+    public function add_fields() {
+        global $post;
+
+        echo '<div class="options_group" style="border: 2px solid #2e7d32; padding: 15px; margin-top: 15px; background: #f1f8e9;">';
+        echo '<h4 style="margin-top: 0; color: #2e7d32;">🌾 Frais de port fixes par palette (confort / nutrition)</h4>';
+        echo '<p style="color: #666; font-size: 12px; margin: 0 0 10px;">Laisser vide = calcul standard. Le montant (prix × nb de palettes) s\'additionne aux frais des autres produits du panier.</p>';
+
+        woocommerce_wp_text_input([
+            'id'                => self::META_DEFAULT,
+            'label'             => 'Prix / palette – tous pays (€)',
+            'type'              => 'number',
+            'custom_attributes' => ['step' => '0.01', 'min' => '0'],
+            'value'             => get_post_meta($post->ID, self::META_DEFAULT, true),
+            'description'       => 'Optionnel. Vide = calcul standard hors pays ci-dessous.',
+        ]);
+
+        foreach (self::COUNTRIES as $code => $name) {
+            woocommerce_wp_text_input([
+                'id'                => self::META_COUNTRY_PREFIX . $code,
+                'label'             => sprintf('Prix / palette – %s (€)', $name),
+                'type'              => 'number',
+                'custom_attributes' => ['step' => '0.01', 'min' => '0'],
+                'value'             => get_post_meta($post->ID, self::META_COUNTRY_PREFIX . $code, true),
+                'description'       => sprintf('Prioritaire pour les livraisons en %s.', $name),
+            ]);
+        }
+
+        echo '</div>';
+    }
+
+    public function save_fields($post_id) {
+        $keys = [self::META_DEFAULT];
+        foreach (array_keys(self::COUNTRIES) as $code) {
+            $keys[] = self::META_COUNTRY_PREFIX . $code;
+        }
+
+        foreach ($keys as $key) {
+            if (!isset($_POST[$key])) {
+                continue;
+            }
+            $value = trim(wp_unslash($_POST[$key]));
+            if ($value === '' || !is_numeric(str_replace(',', '.', $value))) {
+                delete_post_meta($post_id, $key);
+            } else {
+                update_post_meta($post_id, $key, wc_format_decimal(str_replace(',', '.', $value), 2));
+            }
+        }
     }
 }
 
@@ -1293,6 +1413,7 @@ add_action('plugins_loaded', function() {
     SHP_V2_Extended_Database::get_instance();
     SHP_V2_Extended_Rules::get_instance();
     SHP_V2_Extended_Degressive_Products::get_instance();
+    SHP_V2_Fixed_Shipping::get_instance(); // v3.2 : frais fixes par palette
     SHP_V2_Extended_Product_Fields::get_instance();
     SHP_V2_Extended_Calculator::get_instance();
     SHP_V2_Extended_Excel_Importer::get_instance();
