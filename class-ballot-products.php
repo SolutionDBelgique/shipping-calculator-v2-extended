@@ -63,7 +63,7 @@ class SHP_V2_Extended_Ballot_Products {
             return;
         }
         
-        $js_url = plugins_url('shipping-calculator-v2-extended/assets/ballot-products.js');
+        $js_url = plugins_url('assets/ballot-products.js', __FILE__);
         
         wp_enqueue_script(
             'ballot-products',

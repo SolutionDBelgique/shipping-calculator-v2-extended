@@ -61,7 +61,7 @@ class SHP_V2_Extended_Degressive_Products {
             if ($this->is_degressive($post->ID)) {
                 wp_enqueue_script(
                     'shp-v2-degressive',
-                    plugins_url('assets/degressive-products.js', dirname(__FILE__) . '/shipping-calculator-v2-extended.php'),
+                    plugins_url('assets/degressive-products.js', __FILE__),
                     ['jquery'],
                     '2.6.0',
                     true

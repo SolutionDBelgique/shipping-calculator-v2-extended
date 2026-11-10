@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 # Construit le zip installable via WordPress > Extensions > Ajouter > Téléverser.
-# Le zip contient le dossier "shipping-calculator-v2-extended" avec tous les
-# fichiers du plugin + les dépendances Composer (PhpSpreadsheet pour l'import Excel).
+# Le zip contient un dossier portant le nom du dossier du plugin sur le serveur
+# (par défaut "mk-transport-calculator-v4", celui de mkhorsesolutions.com), avec
+# tous les fichiers du plugin + les dépendances Composer (PhpSpreadsheet).
+# WordPress propose alors "Remplacer la version actuelle".
 #
-# Usage : ./build-zip.sh   ->  dist/shipping-calculator-v2-extended-<version>.zip
+# Usage : ./build-zip.sh                 ->  dist/mk-transport-calculator-v4-<version>.zip
+#         ./build-zip.sh autre-dossier   ->  dist/autre-dossier-<version>.zip
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-SLUG="shipping-calculator-v2-extended"
-VERSION="$(grep -m1 -E '^\s*\*\s*Version:' "$ROOT/$SLUG.php" | sed -E 's/.*Version:\s*//' | tr -d '[:space:]')"
+MAIN="shipping-calculator-v2-extended.php"
+SLUG="${1:-mk-transport-calculator-v4}"
+VERSION="$(grep -m1 -E '^\s*\*\s*Version:' "$ROOT/$MAIN" | sed -E 's/.*Version:\s*//' | tr -d '[:space:]')"
 BUILD="$(mktemp -d)"
 DEST="$BUILD/$SLUG"
 OUT="$ROOT/dist/$SLUG-$VERSION.zip"
