@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: Shipping Calculator V3 Extended
- * Version: 3.1.0
+ * Version: 3.2.0
  * Description: Interface complète + Produits dégressifs au m² + Produits dégressifs par Ballot + Internationalisation + Codes promo Prix m²
  * Author: SolutionD
  * Requires at least: 5.8
@@ -52,6 +52,10 @@ require_once __DIR__ . '/international-product-fields.php';
 require_once __DIR__ . '/international-admin-tab.php';
 require_once __DIR__ . '/international-migration.php';
 // ===== FIN Internationalisation =====
+
+// ===== NOUVEAU v3.2.0 : Frais de port fixes par palette (confort / nutrition) =====
+require_once __DIR__ . '/class-fixed-shipping.php';
+// ===== FIN Frais de port fixes =====
 
 // Vérifier WooCommerce
 add_action('admin_init', function() {
@@ -572,9 +576,10 @@ class SHP_V2_Extended_Calculator {
 
         $has_dalles  = ($analysis['dalles_palettes'] > 0 || $analysis['dalles_non_palettes'] > 0);
         $has_matelas = ($analysis['matelas_count'] > 0);
+        $has_fixed   = ($analysis['fixed_palettes'] > 0);
 
         // CAS LIVRAISON GRATUITE UNIQUEMENT : creer taux a 0EUR
-        if (!$has_dalles && !$has_matelas) {
+        if (!$has_dalles && !$has_matelas && !$has_fixed) {
             if ($analysis['nb_free_palettes'] > 0) {
                 $nb = $analysis['nb_free_palettes'];
                 $label = sprintf('Livraison GRATUITE - %d palette(s)', $nb);
@@ -665,6 +670,21 @@ class SHP_V2_Extended_Calculator {
             }
         }
 
+        // === FRAIS FIXES PAR PALETTE (v3.2 : confort / nutrition) ===
+        if ($has_fixed) {
+            $total_cost += $analysis['fixed_cost'];
+            $details[] = [
+                'type'    => 'fixed_per_pallet',
+                'label'   => sprintf('Confort / nutrition (%d palette(s))', $analysis['fixed_palettes']),
+                'cost'    => $analysis['fixed_cost'],
+                'details' => [
+                    'country'  => $country,
+                    'palettes' => $analysis['fixed_palettes'],
+                    'products' => $analysis['fixed_details'],
+                ],
+            ];
+        }
+
         if ($total_cost === 0) {
             return $rates;
         }
@@ -698,6 +718,10 @@ class SHP_V2_Extended_Calculator {
         $dalles_non_palettes = 0;
         $matelas_count = 0;
         $nb_free_palettes = 0;
+        $fixed_palettes = 0;
+        $fixed_cost = 0.0;
+        $fixed_details = [];
+        $fixed_shipping = class_exists('SHP_V2_Fixed_Shipping') ? SHP_V2_Fixed_Shipping::get_instance() : null;
 
         $matelas_category_id = (int) get_option('shp_v2_ext_matelas_category_id', 0);
 
@@ -720,6 +744,25 @@ class SHP_V2_Extended_Calculator {
                     $nb_free_palettes += 1;
                 }
                 continue;
+            }
+
+            // v3.2.0 : Prix fixe par palette (foin, copeaux...) selon pays
+            if ($fixed_shipping) {
+                $meta_id = $product->get_parent_id() ?: $product_id;
+                $price_per_pallet = $fixed_shipping->get_price_per_pallet($meta_id, $country);
+                if ($price_per_pallet !== null) {
+                    $pallets = $fixed_shipping->get_item_pallets($item);
+                    $line_cost = $pallets * $price_per_pallet;
+                    $fixed_palettes += $pallets;
+                    $fixed_cost += $line_cost;
+                    $fixed_details[] = [
+                        'product_id'       => $meta_id,
+                        'palettes'         => $pallets,
+                        'price_per_pallet' => $price_per_pallet,
+                        'cost'             => $line_cost,
+                    ];
+                    continue;
+                }
             }
 
             // v2.8.0 : Detecter les matelas par categorie WooCommerce
@@ -758,6 +801,9 @@ class SHP_V2_Extended_Calculator {
             'matelas_count'       => $matelas_count,
             'matelas_palettes'    => $matelas_count > 0 ? (int) ceil($matelas_count / 2) : 0,
             'nb_free_palettes'    => $nb_free_palettes,
+            'fixed_palettes'      => $fixed_palettes,
+            'fixed_cost'          => $fixed_cost,
+            'fixed_details'       => $fixed_details,
             // Backward compat
             'nb_palettes'         => $dalles_palettes,
             'nb_non_palettes'     => $dalles_non_palettes,
@@ -949,6 +995,10 @@ class SHP_V2_Extended_Calculator {
 
         if ($analysis['matelas_count'] > 0) {
             $parts[] = sprintf('%d matelas', $analysis['matelas_count']);
+        }
+
+        if (!empty($analysis['fixed_palettes'])) {
+            $parts[] = sprintf('%d palette(s) confort/nutrition', $analysis['fixed_palettes']);
         }
 
         if ($analysis['dalles_non_palettes'] > 0) {
