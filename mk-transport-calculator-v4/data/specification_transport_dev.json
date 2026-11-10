@@ -1,0 +1,73 @@
+{
+  "france": {
+    "tranches_valeur_commande": [
+      {
+        "min": 0,
+        "max": 200,
+        "pct": 0.19
+      },
+      {
+        "min": 200,
+        "max": 800,
+        "pct": 0.18
+      },
+      {
+        "min": 800,
+        "max": 1600,
+        "pct": 0.14
+      },
+      {
+        "min": 1600,
+        "max": null,
+        "pct": 0.12
+      }
+    ],
+    "formule": "frais = sous_total * pct_tranche (taux unique pour toute la France, sans coefficient de zone), minimum 90 EUR"
+  },
+  "belgique": {
+    "tranches_valeur_commande": [
+      {
+        "min": 0,
+        "max": 200,
+        "pct": 0.23
+      },
+      {
+        "min": 200,
+        "max": 800,
+        "pct": 0.19
+      },
+      {
+        "min": 800,
+        "max": 1600,
+        "pct": 0.18
+      },
+      {
+        "min": 1600,
+        "max": null,
+        "pct": 0.15
+      }
+    ],
+    "coefficient_geo": "aucun - tarif uniforme sur toute la Belgique (fourchette communiquee 18-23 / 15-19 / 14-18 / 12-15, borne haute appliquee)"
+  },
+  "dalles_regle_a_part": {
+    "s_applique": "uniquement au SKU dalles, jamais aux autres produits, jamais le systeme par tranche",
+    "prix_par_palette": {
+      "france": {
+        "1": 135,
+        "2": 125,
+        "3": 115,
+        "4": 110,
+        "5_plus": 90
+      },
+      "belgique": {
+        "1": 50,
+        "2": 50,
+        "3": 50,
+        "4": 50,
+        "5_plus": 50
+      }
+    },
+    "note": "Prix PAR palette selon le nombre total de palettes (ex. France 3 palettes = 3 x 115 = 345 EUR). Pays hors France/Belgique : grille France."
+  },
+  "commande_mixte": "calculer transport_dalles et transport_autres_produits separement sur leurs sous-totaux respectifs, puis ADDITIONNER pour obtenir le total affiche au client en une seule ligne 'Frais de livraison'. Ne jamais appliquer le systeme par tranche sur la valeur totale du panier (casse l'incitatif volume des dalles)."
+}

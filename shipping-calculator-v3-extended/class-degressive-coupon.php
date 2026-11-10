@@ -259,10 +259,16 @@ class SHP_V2_Degressive_Coupon {
     }
 
     /**
-     * Calcule le montant de la remise = total_original - total_forcé
+     * Calcule le montant de la remise = discounting_amount - total_forcé
      *
      * WooCommerce affiche cette différence comme "Remise : -X€" dans le panier.
      * La réduction est soustraite du total, ce qui donne bien le prix forcé au final.
+     *
+     * IMPORTANT : on part de $discounting_amount (le montant restant à réduire tel que
+     * fourni par WooCommerce), pas du total dégressif d'origine. $discounting_amount
+     * reflète déjà les remises des coupons précédemment appliqués dans la pile ; si on
+     * repart du total d'origine, un coupon cumulé avant celui-ci serait ignoré et le
+     * prix final ne correspondrait plus au prix forcé (sur- ou sous-remise).
      */
     public function get_discount_amount($discount, $discounting_amount, $cart_item, $single, $coupon) {
         if ($coupon->get_discount_type() !== 'degressive_price_m2') {
@@ -293,12 +299,14 @@ class SHP_V2_Degressive_Coupon {
             return 0;
         }
 
-        $m2             = (float) $degressive_data['m2'];
-        $original_total = (float) $degressive_data['total'];
-        $forced_total   = $m2 * $forced_price;
+        // Note : la quantité des articles dégressifs est toujours forcée à 1
+        // (voir SHP_V2_Extended_Degressive_Products::set_degressive_price), donc le
+        // montant "par unité" ($single) et le montant "de ligne" sont identiques ici.
+        $m2           = (float) $degressive_data['m2'];
+        $forced_total = $m2 * $forced_price;
 
-        // La remise = différence entre le total original et le total au prix forcé
-        return max(0, round($original_total - $forced_total, 2));
+        // La remise = différence entre le montant restant à réduire et le total au prix forcé
+        return max(0, round((float) $discounting_amount - $forced_total, 2));
     }
 
     /**
