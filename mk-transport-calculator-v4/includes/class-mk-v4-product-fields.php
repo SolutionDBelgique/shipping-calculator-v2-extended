@@ -98,6 +98,21 @@ class MK_V4_Product_Fields {
             'value' => get_post_meta($post->ID, self::FIXED_AMOUNT_META_KEY, true),
         ]);
 
+        foreach (MK_V4_Calculator::FIXED_COUNTRIES as $code => $name) {
+            $key = MK_V4_Calculator::FIXED_AMOUNT_COUNTRY_META_PREFIX . $code;
+            woocommerce_wp_text_input([
+                'id' => $key,
+                'label' => sprintf('Montant fixe par unité – %s (€)', $name),
+                'type' => 'number',
+                'custom_attributes' => ['step' => '0.01', 'min' => '0'],
+                'description' => sprintf('Optionnel. Remplace le montant ci-dessus pour les livraisons en %s. Vide = montant général.', $name),
+                'desc_tip' => true,
+                'value' => get_post_meta($post->ID, $key, true),
+            ]);
+        }
+
+        echo '<p class="description" style="margin-left: 12px;">Montant général vide = calcul normal pour les pays sans montant spécifique.</p>';
+
         echo '</div>';
 
         echo '<script>
@@ -205,6 +220,19 @@ class MK_V4_Product_Fields {
             update_post_meta($post_id, self::FIXED_AMOUNT_META_KEY, wc_format_decimal($_POST[self::FIXED_AMOUNT_META_KEY]));
         }
 
+        foreach (array_keys(MK_V4_Calculator::FIXED_COUNTRIES) as $code) {
+            $key = MK_V4_Calculator::FIXED_AMOUNT_COUNTRY_META_PREFIX . $code;
+            if (!isset($_POST[$key])) {
+                continue;
+            }
+            $raw = trim(wp_unslash($_POST[$key]));
+            if ($raw === '') {
+                delete_post_meta($post_id, $key);
+            } else {
+                update_post_meta($post_id, $key, wc_format_decimal($raw));
+            }
+        }
+
         $this->save_degressive_fields($post_id);
     }
 
@@ -251,8 +279,10 @@ class MK_V4_Product_Fields {
             ];
         }
 
-        if (get_post_meta($product_id, self::FIXED_ENABLED_META_KEY, true) === 'yes') {
-            $amount = (float) get_post_meta($product_id, self::FIXED_AMOUNT_META_KEY, true);
+        $country = (function_exists('WC') && WC()->customer) ? WC()->customer->get_shipping_country() : '';
+        $amount = MK_V4_Calculator::get_fixed_unit_amount($product_id, $country);
+
+        if ($amount !== null) {
             $qty = $cart_item['quantity'];
 
             $item_data[] = [
