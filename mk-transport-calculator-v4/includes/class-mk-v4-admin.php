@@ -43,6 +43,21 @@ class MK_V4_Admin {
 
         if (isset($_POST['mk_v4_save_settings']) && check_admin_referer('mk_v4_settings')) {
             update_option('mk_v4_debug', isset($_POST['mk_v4_debug']) ? 'yes' : 'no');
+
+            $barrier_cats = array_values(array_filter(array_map('absint', (array) ($_POST['mk_v4_barrier_cats'] ?? []))));
+            $metal_cats   = array_values(array_filter(array_map('absint', (array) ($_POST['mk_v4_metal_cats'] ?? []))));
+            update_option(MK_V4_Calculator::BARRIER_CATS_OPTION, $barrier_cats);
+            update_option(MK_V4_Calculator::METAL_CATS_OPTION, $metal_cats);
+
+            if (isset($_POST['mk_v4_barrier_forfait']) && is_numeric(str_replace(',', '.', $_POST['mk_v4_barrier_forfait']))) {
+                update_option(MK_V4_Calculator::BARRIER_FORFAIT_OPTION, (float) str_replace(',', '.', $_POST['mk_v4_barrier_forfait']));
+            }
+            if (isset($_POST['mk_v4_barrier_max_qty'])) {
+                update_option(MK_V4_Calculator::BARRIER_MAX_QTY_OPTION, max(0, (int) $_POST['mk_v4_barrier_max_qty']));
+            }
+            if (isset($_POST['mk_v4_metal_forfait']) && is_numeric(str_replace(',', '.', $_POST['mk_v4_metal_forfait']))) {
+                update_option(MK_V4_Calculator::METAL_FORFAIT_OPTION, (float) str_replace(',', '.', $_POST['mk_v4_metal_forfait']));
+            }
             echo '<div class="notice notice-success"><p>Réglages enregistrés.</p></div>';
         }
 
@@ -79,6 +94,9 @@ class MK_V4_Admin {
         $dalles   = isset($_POST['mk_test_dalles']) ? (int) $_POST['mk_test_dalles'] : 0;
         $autres   = isset($_POST['mk_test_autres']) ? (float) str_replace(',', '.', $_POST['mk_test_autres']) : 0;
         $fixe     = isset($_POST['mk_test_fixe']) ? (float) str_replace(',', '.', $_POST['mk_test_fixe']) : 0;
+        $barrier_qty      = isset($_POST['mk_test_barrier_qty']) ? max(0, (int) $_POST['mk_test_barrier_qty']) : 0;
+        $barrier_subtotal = isset($_POST['mk_test_barrier_subtotal']) ? (float) str_replace(',', '.', $_POST['mk_test_barrier_subtotal']) : 0;
+        $metal_subtotal   = isset($_POST['mk_test_metal_subtotal']) ? (float) str_replace(',', '.', $_POST['mk_test_metal_subtotal']) : 0;
 
         $result = null;
 
@@ -89,15 +107,24 @@ class MK_V4_Admin {
             $dalles_method->setAccessible(true);
             $dalles_cost = $dalles_method->invoke($this->calculator, strtoupper($country), $dalles);
 
+            $forfaits = $this->calculator->apply_forfaits(
+                strtoupper($country),
+                $barrier_qty,
+                $barrier_subtotal,
+                $metal_subtotal > 0 ? 1 : 0,
+                $metal_subtotal
+            );
+
             $pct_method = $reflect->getMethod('calculate_percentage_cost');
             $pct_method->setAccessible(true);
-            $autres_calc = $pct_method->invoke($this->calculator, strtoupper($country), $postcode, $autres);
+            $autres_calc = $pct_method->invoke($this->calculator, strtoupper($country), $postcode, $autres + $forfaits['autres_extra_subtotal']);
 
             $result = [
                 'dalles_cost' => $dalles_cost,
                 'autres_calc' => $autres_calc,
                 'fixe' => $fixe,
-                'total' => $dalles_cost + $autres_calc['cost'] + $fixe,
+                'forfaits' => $forfaits,
+                'total' => $dalles_cost + $autres_calc['cost'] + $fixe + $forfaits['barrier_cost'] + $forfaits['metal_cost'],
             ];
         }
         ?>
@@ -128,6 +155,24 @@ class MK_V4_Admin {
                     <td><input type="text" name="mk_test_autres" value="<?php echo esc_attr($autres); ?>" placeholder="Ex: 1390" /></td>
                 </tr>
                 <tr>
+                    <th><label>Nombre de barrières métal</label></th>
+                    <td>
+                        <input type="number" name="mk_test_barrier_qty" value="<?php echo esc_attr($barrier_qty); ?>" min="0" />
+                        <p class="description">Total tous modèles confondus.</p>
+                    </td>
+                </tr>
+                <tr>
+                    <th><label>Sous-total barrières (€)</label></th>
+                    <td>
+                        <input type="text" name="mk_test_barrier_subtotal" value="<?php echo esc_attr($barrier_subtotal); ?>" placeholder="Ex: 640" />
+                        <p class="description">Utilisé seulement si le forfait ne s'applique pas (calcul normal).</p>
+                    </td>
+                </tr>
+                <tr>
+                    <th><label>Sous-total autres produits métal (€)</label></th>
+                    <td><input type="text" name="mk_test_metal_subtotal" value="<?php echo esc_attr($metal_subtotal); ?>" placeholder="Ex: 300" /></td>
+                </tr>
+                <tr>
                     <th><label>Frais fixes produits (bypass) (€)</label></th>
                     <td>
                         <input type="text" name="mk_test_fixe" value="<?php echo esc_attr($fixe); ?>" placeholder="Ex: 135" />
@@ -150,6 +195,16 @@ class MK_V4_Admin {
                     </td></tr>
                     <?php endif; ?>
                     <tr><td>Coût autres produits</td><td><strong><?php echo wc_price($result['autres_calc']['cost']); ?></strong></td></tr>
+                    <?php if ($barrier_qty > 0): ?>
+                    <tr><td>Barrières métal (<?php echo esc_html($barrier_qty); ?>)</td><td><strong>
+                        <?php echo $result['forfaits']['barrier_forfait'] ? 'Forfait ' . wc_price($result['forfaits']['barrier_cost']) : 'Calcul normal (inclus dans les autres produits)'; ?>
+                    </strong></td></tr>
+                    <?php endif; ?>
+                    <?php if ($metal_subtotal > 0): ?>
+                    <tr><td>Autres produits métal</td><td><strong>
+                        <?php echo $result['forfaits']['metal_forfait'] ? 'Forfait ' . wc_price($result['forfaits']['metal_cost']) : 'Calcul normal (inclus dans les autres produits)'; ?>
+                    </strong></td></tr>
+                    <?php endif; ?>
                     <?php if (!empty($result['fixe'])): ?>
                     <tr><td>Frais fixes produits (bypass)</td><td><strong><?php echo wc_price($result['fixe']); ?></strong></td></tr>
                     <?php endif; ?>
@@ -206,6 +261,18 @@ class MK_V4_Admin {
             Commande mixte : coût dalles + coût autres produits calculés séparément sur leurs sous-totaux respectifs, puis additionnés en une seule ligne "Frais de livraison".
         </p>
 
+        <h2 style="margin-top:30px;">🔩 Produits métal</h2>
+        <ul style="list-style:disc; margin-left:20px;">
+            <li><strong>Barrières métal</strong> (Texas, Eco, avec porte, extensibles…) livrées en 🇧🇪 Belgique ou 🇫🇷 France :
+                de 1 à <?php echo esc_html(MK_V4_Calculator::get_barrier_max_qty()); ?> barrières au total, tous modèles mélangés →
+                <strong>forfait unique de <?php echo wc_price(MK_V4_Calculator::get_barrier_forfait()); ?></strong>.
+                Au-delà, ou vers un autre pays : calcul normal (système au pourcentage avec les autres produits).</li>
+            <li><strong>Autres produits métal</strong> livrés en 🇧🇪 Belgique : <strong>forfait de <?php echo wc_price(MK_V4_Calculator::get_metal_forfait()); ?> par commande</strong>.
+                Ailleurs : calcul normal.</li>
+            <li>Catégories concernées : onglet « Configuration ». Un produit à tarif fixe (bypass) garde son tarif fixe.</li>
+            <li>Panier mixte : les forfaits s'additionnent aux autres frais (dalles, autres produits, tarifs fixes).</li>
+        </ul>
+
         <h2 style="margin-top:30px;">🔒 Tarif de transport fixe par produit (bypass)</h2>
         <p>
             Activable produit par produit dans l'onglet <strong>Expédition</strong> de la fiche produit
@@ -222,6 +289,10 @@ class MK_V4_Admin {
 
     private function tab_config() {
         $debug = get_option('mk_v4_debug', 'yes');
+        $barrier_cats = MK_V4_Calculator::get_category_ids(MK_V4_Calculator::BARRIER_CATS_OPTION);
+        $metal_cats   = MK_V4_Calculator::get_category_ids(MK_V4_Calculator::METAL_CATS_OPTION);
+        $categories   = get_terms(['taxonomy' => 'product_cat', 'hide_empty' => false, 'orderby' => 'name']);
+        $categories   = is_wp_error($categories) ? [] : $categories;
         ?>
         <h2>⚙️ Configuration</h2>
         <form method="post">
@@ -234,6 +305,36 @@ class MK_V4_Admin {
                             <input type="checkbox" name="mk_v4_debug" <?php checked($debug, 'yes'); ?> />
                             Afficher le détail du calcul dans le panier et la commande (utile pour vérifier un tarif)
                         </label>
+                    </td>
+                </tr>
+                <tr>
+                    <th>Catégories « barrières métal »</th>
+                    <td>
+                        <?php $this->render_category_select('mk_v4_barrier_cats', $categories, $barrier_cats); ?>
+                        <p class="description">Texas, Eco, modèles avec porte, extensibles… Les sous-catégories sont incluses. Ctrl/Cmd + clic pour en choisir plusieurs.</p>
+                    </td>
+                </tr>
+                <tr>
+                    <th>Forfait barrières</th>
+                    <td>
+                        <input type="text" name="mk_v4_barrier_forfait" value="<?php echo esc_attr(MK_V4_Calculator::get_barrier_forfait()); ?>" style="width:80px;" /> €
+                        pour 1 à
+                        <input type="number" name="mk_v4_barrier_max_qty" value="<?php echo esc_attr(MK_V4_Calculator::get_barrier_max_qty()); ?>" min="0" step="1" style="width:60px;" />
+                        barrières au total (Belgique et France). Au-delà : calcul normal.
+                    </td>
+                </tr>
+                <tr>
+                    <th>Catégories « autres produits métal »</th>
+                    <td>
+                        <?php $this->render_category_select('mk_v4_metal_cats', $categories, $metal_cats); ?>
+                        <p class="description">Un produit présent dans les deux listes est traité comme une barrière.</p>
+                    </td>
+                </tr>
+                <tr>
+                    <th>Forfait autres produits métal</th>
+                    <td>
+                        <input type="text" name="mk_v4_metal_forfait" value="<?php echo esc_attr(MK_V4_Calculator::get_metal_forfait()); ?>" style="width:80px;" /> €
+                        par commande, livraison en Belgique. Ailleurs : calcul normal.
                     </td>
                 </tr>
                 <tr>
@@ -255,5 +356,33 @@ class MK_V4_Admin {
             <p><button type="submit" name="mk_v4_save_settings" class="button button-primary">Enregistrer</button></p>
         </form>
         <?php
+    }
+
+    /**
+     * Liste à choix multiple des catégories produit, indentée selon la hiérarchie.
+     */
+    private function render_category_select($name, $categories, $selected) {
+        $by_parent = [];
+        foreach ($categories as $cat) {
+            $by_parent[(int) $cat->parent][] = $cat;
+        }
+
+        echo '<select name="' . esc_attr($name) . '[]" multiple size="8" style="min-width:320px;">';
+        $this->render_category_options($by_parent, 0, 0, $selected);
+        echo '</select>';
+    }
+
+    private function render_category_options($by_parent, $parent_id, $depth, $selected) {
+        foreach ($by_parent[$parent_id] ?? [] as $cat) {
+            printf(
+                '<option value="%d" %s>%s%s (%d)</option>',
+                (int) $cat->term_id,
+                in_array((int) $cat->term_id, $selected, true) ? 'selected' : '',
+                str_repeat('— ', $depth),
+                esc_html($cat->name),
+                (int) $cat->count
+            );
+            $this->render_category_options($by_parent, (int) $cat->term_id, $depth + 1, $selected);
+        }
     }
 }
