@@ -11,6 +11,11 @@
  *   produit — il est exclu des sous-totaux dalles/pourcentage et son montant fixe
  *   (× quantité) est simplement ajouté au total. Un montant spécifique France peut
  *   être saisi : il remplace le montant général pour les livraisons en France.
+ * - Barrières métal (catégories configurables) : forfait unique de BARRIER_FORFAIT_DEFAULT €
+ *   pour 1 à BARRIER_MAX_QTY_DEFAULT barrières au total (modèles mélangés), en Belgique et
+ *   en France ; au-delà, elles repassent dans le calcul normal (système au pourcentage)
+ * - Autres produits métal (catégories configurables) livrés en Belgique : forfait de
+ *   METAL_FORFAIT_DEFAULT € par commande ; ailleurs, calcul normal
  * - Commande mixte : tous les montants sont additionnés et affichés en UNE seule ligne
  */
 
@@ -33,6 +38,20 @@ class MK_V4_Calculator {
     // Minimum de frais pour la partie "autres produits" (hors dalles et hors tarif fixe)
     const MIN_AUTRES_COST = 90.0;
 
+    // Barrières métal : forfait pour 1 à N barrières (tous modèles confondus)
+    const BARRIER_CATS_OPTION      = 'mk_v4_barrier_category_ids';
+    const BARRIER_FORFAIT_OPTION   = 'mk_v4_barrier_forfait';
+    const BARRIER_MAX_QTY_OPTION   = 'mk_v4_barrier_max_qty';
+    const BARRIER_FORFAIT_DEFAULT  = 49.0;
+    const BARRIER_MAX_QTY_DEFAULT  = 3;
+    const BARRIER_COUNTRIES        = ['BE', 'FR'];
+
+    // Autres produits métal : forfait par commande
+    const METAL_CATS_OPTION        = 'mk_v4_metal_category_ids';
+    const METAL_FORFAIT_OPTION     = 'mk_v4_metal_forfait';
+    const METAL_FORFAIT_DEFAULT    = 79.0;
+    const METAL_COUNTRIES          = ['BE'];
+
     public static function get_instance() {
         if (self::$instance === null) {
             self::$instance = new self();
@@ -54,24 +73,40 @@ class MK_V4_Calculator {
 
         $analysis = $this->analyze_cart($package['contents'], $country);
 
-        if ($analysis['dalles_qty'] <= 0 && $analysis['autres_subtotal'] <= 0 && $analysis['fixed_cost'] <= 0) {
+        if ($analysis['dalles_qty'] <= 0 && $analysis['autres_subtotal'] <= 0 && $analysis['fixed_cost'] <= 0
+            && $analysis['barrier_qty'] <= 0 && $analysis['metal_qty'] <= 0) {
             return $rates;
         }
 
+        $forfaits = $this->apply_forfaits(
+            $country,
+            $analysis['barrier_qty'],
+            $analysis['barrier_subtotal'],
+            $analysis['metal_qty'],
+            $analysis['metal_subtotal']
+        );
+
         $dalles_cost  = $this->calculate_dalles_cost($country, $analysis['dalles_qty']);
-        $autres_calc  = $this->calculate_percentage_cost($country, $postcode, $analysis['autres_subtotal']);
+        $autres_subtotal = $analysis['autres_subtotal'] + $forfaits['autres_extra_subtotal'];
+        $autres_calc  = $this->calculate_percentage_cost($country, $postcode, $autres_subtotal);
         $autres_cost  = $autres_calc['cost'];
         $fixed_cost   = round($analysis['fixed_cost'], 2);
 
-        $total_cost = $dalles_cost + $autres_cost + $fixed_cost;
+        $total_cost = $dalles_cost + $autres_cost + $fixed_cost + $forfaits['barrier_cost'] + $forfaits['metal_cost'];
 
         WC()->session->set('mk_v4_calc', [
             'country'         => $country,
             'postcode'        => $postcode,
             'dalles_qty'      => $analysis['dalles_qty'],
             'dalles_cost'     => $dalles_cost,
-            'autres_subtotal' => $analysis['autres_subtotal'],
+            'autres_subtotal' => $autres_subtotal,
             'autres_cost'     => $autres_cost,
+            'barrier_qty'     => $analysis['barrier_qty'],
+            'barrier_forfait' => $forfaits['barrier_forfait'],
+            'barrier_cost'    => $forfaits['barrier_cost'],
+            'metal_qty'       => $analysis['metal_qty'],
+            'metal_forfait'   => $forfaits['metal_forfait'],
+            'metal_cost'      => $forfaits['metal_cost'],
             'autres_details'  => $autres_calc,
             'fixed_cost'      => $fixed_cost,
             'fixed_items'     => $analysis['fixed_items'],
@@ -128,11 +163,106 @@ class MK_V4_Calculator {
         return null;
     }
 
+    /**
+     * IDs de catégories produit configurés dans une option (tableau d'entiers).
+     */
+    public static function get_category_ids($option) {
+        return array_values(array_filter(array_map('absint', (array) get_option($option, []))));
+    }
+
+    /**
+     * Le produit (ou son produit parent pour une variation) appartient-il à l'une des
+     * catégories données, ou à une de leurs sous-catégories ?
+     */
+    public static function product_in_categories($product, $category_ids) {
+        if (empty($category_ids) || !is_object($product)) {
+            return false;
+        }
+
+        $product_id = (method_exists($product, 'get_parent_id') && $product->get_parent_id())
+            ? $product->get_parent_id()
+            : $product->get_id();
+
+        $terms = wp_get_post_terms($product_id, 'product_cat', ['fields' => 'ids']);
+        if (is_wp_error($terms) || empty($terms)) {
+            return false;
+        }
+
+        foreach ($terms as $term_id) {
+            $lineage = array_merge([(int) $term_id], array_map('intval', get_ancestors($term_id, 'product_cat', 'taxonomy')));
+            if (array_intersect($lineage, $category_ids)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static function get_barrier_forfait() {
+        return (float) get_option(self::BARRIER_FORFAIT_OPTION, self::BARRIER_FORFAIT_DEFAULT);
+    }
+
+    public static function get_barrier_max_qty() {
+        return max(0, (int) get_option(self::BARRIER_MAX_QTY_OPTION, self::BARRIER_MAX_QTY_DEFAULT));
+    }
+
+    public static function get_metal_forfait() {
+        return (float) get_option(self::METAL_FORFAIT_OPTION, self::METAL_FORFAIT_DEFAULT);
+    }
+
+    /**
+     * Forfaits métal :
+     * - barrières : 1 à N au total (tous modèles) en BE/FR → forfait unique ;
+     *   sinon leur sous-total rejoint le calcul normal (pourcentage)
+     * - autres produits métal en BE → forfait par commande ;
+     *   sinon leur sous-total rejoint le calcul normal
+     *
+     * @return array barrier_cost, barrier_forfait (bool), metal_cost, metal_forfait (bool),
+     *               autres_extra_subtotal (montant à ajouter au sous-total "autres produits")
+     */
+    public function apply_forfaits($country, $barrier_qty, $barrier_subtotal, $metal_qty, $metal_subtotal) {
+        $country = strtoupper((string) $country);
+        $result = [
+            'barrier_cost'          => 0.0,
+            'barrier_forfait'       => false,
+            'metal_cost'            => 0.0,
+            'metal_forfait'         => false,
+            'autres_extra_subtotal' => 0.0,
+        ];
+
+        if ($barrier_qty > 0) {
+            if (in_array($country, self::BARRIER_COUNTRIES, true) && $barrier_qty <= self::get_barrier_max_qty()) {
+                $result['barrier_cost']    = round(self::get_barrier_forfait(), 2);
+                $result['barrier_forfait'] = true;
+            } else {
+                $result['autres_extra_subtotal'] += (float) $barrier_subtotal;
+            }
+        }
+
+        if ($metal_qty > 0) {
+            if (in_array($country, self::METAL_COUNTRIES, true)) {
+                $result['metal_cost']    = round(self::get_metal_forfait(), 2);
+                $result['metal_forfait'] = true;
+            } else {
+                $result['autres_extra_subtotal'] += (float) $metal_subtotal;
+            }
+        }
+
+        return $result;
+    }
+
     private function analyze_cart($cart_items, $country = '') {
         $dalles_qty      = 0;
         $autres_subtotal = 0.0;
         $fixed_cost      = 0.0;
         $fixed_items     = [];
+        $barrier_qty      = 0;
+        $barrier_subtotal = 0.0;
+        $metal_qty        = 0;
+        $metal_subtotal   = 0.0;
+
+        $barrier_cats = self::get_category_ids(self::BARRIER_CATS_OPTION);
+        $metal_cats   = self::get_category_ids(self::METAL_CATS_OPTION);
 
         foreach ($cart_items as $item) {
             $product    = $item['data'];
@@ -157,6 +287,20 @@ class MK_V4_Calculator {
                 continue;
             }
 
+            // Barrières métal (tous modèles confondus) : comptées ensemble pour le forfait
+            if (self::product_in_categories($product, $barrier_cats)) {
+                $barrier_qty      += $quantity;
+                $barrier_subtotal += $line_total;
+                continue;
+            }
+
+            // Autres produits métal : forfait par commande selon le pays
+            if (self::product_in_categories($product, $metal_cats)) {
+                $metal_qty      += $quantity;
+                $metal_subtotal += $line_total;
+                continue;
+            }
+
             $is_dalle = get_post_meta($product_id, self::DALLE_META_KEY, true) === 'yes';
 
             if ($is_dalle) {
@@ -171,6 +315,10 @@ class MK_V4_Calculator {
             'autres_subtotal' => $autres_subtotal,
             'fixed_cost'      => $fixed_cost,
             'fixed_items'     => $fixed_items,
+            'barrier_qty'      => $barrier_qty,
+            'barrier_subtotal' => $barrier_subtotal,
+            'metal_qty'        => $metal_qty,
+            'metal_subtotal'   => $metal_subtotal,
         ];
     }
 
@@ -270,6 +418,28 @@ class MK_V4_Calculator {
                             <td style="font-weight: 600;">Frais autres produits :</td>
                             <td><?php echo wc_price($calc['autres_cost']); ?></td>
                         </tr>
+                        <?php if (!empty($calc['barrier_qty'])): ?>
+                        <tr>
+                            <td style="font-weight: 600;">Barrières métal :</td>
+                            <td>
+                                <?php echo esc_html($calc['barrier_qty']); ?> →
+                                <?php echo !empty($calc['barrier_forfait'])
+                                    ? 'forfait ' . wc_price($calc['barrier_cost'])
+                                    : 'calcul normal (inclus dans les autres produits)'; ?>
+                            </td>
+                        </tr>
+                        <?php endif; ?>
+                        <?php if (!empty($calc['metal_qty'])): ?>
+                        <tr>
+                            <td style="font-weight: 600;">Autres produits métal :</td>
+                            <td>
+                                <?php echo esc_html($calc['metal_qty']); ?> →
+                                <?php echo !empty($calc['metal_forfait'])
+                                    ? 'forfait ' . wc_price($calc['metal_cost'])
+                                    : 'calcul normal (inclus dans les autres produits)'; ?>
+                            </td>
+                        </tr>
+                        <?php endif; ?>
                         <?php if (!empty($calc['fixed_cost'])): ?>
                         <tr>
                             <td style="font-weight: 600;">Produits à tarif fixe (bypass) :</td>
